@@ -1,7 +1,10 @@
+import { useState } from "react";
+import HomePage from "./components/HomePage";
+import GameScreen from "./components/GameScreen";
+
 export default function App() {
-  return (
-    <div className="min-h-screen bg-green-50 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-green-800">Ager</h1>
-    </div>
-  );
+  const [view, setView] = useState("home"); // "home" | "game"
+
+  if (view === "game") return <GameScreen onMenu={() => setView("home")} />;
+  return <HomePage onStart={() => setView("game")} />;
 }
