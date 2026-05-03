@@ -1,0 +1,70 @@
+/* ═══════════════════════════════════════════════════════════════
+   cards.css  —  Card rarity borders & drop-zone highlights
+   Customize the rarity blocks freely; all class names are stable.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Base card shape ────────────────────────────────────────── */
+.card-base {
+  border-radius: 0.6rem;
+  border-width: 2px;
+  border-style: solid;
+  border-color: transparent;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    filter 0.15s ease;
+}
+
+/* ── Rarity borders ─────────────────────────────────────────── */
+/*    Customize colors, glows, gradients, animations below.      */
+
+.card-rarity-common {
+  border-color: #90a4ae;
+  /* no glow — intentionally understated */
+}
+
+.card-rarity-rare {
+  border-color: #42a5f5;
+  box-shadow: 0 0 8px rgba(66, 165, 245, 0.4);
+}
+
+.card-rarity-epic {
+  border-color: #ab47bc;
+  box-shadow: 0 0 12px rgba(171, 71, 188, 0.55);
+}
+
+.card-rarity-legendary {
+  border-color: #ffa726;
+  box-shadow: 0 0 18px rgba(255, 167, 38, 0.65);
+}
+
+/* ── Drop-zone states ───────────────────────────────────────── */
+
+/* A valid card is hovering over this zone */
+.drop-zone-active {
+  outline: 2px dashed rgba(99, 179, 237, 0.75);
+  outline-offset: 3px;
+  background-color: rgba(99, 179, 237, 0.07) !important;
+}
+
+/* An incompatible card is hovering (rejected) */
+.drop-zone-reject {
+  outline: 2px dashed rgba(239, 83, 80, 0.55);
+  outline-offset: 3px;
+}
+
+/* ── Hand card interaction ──────────────────────────────────── */
+
+/* Lift and brighten on hover within the hand */
+.hand-card:hover {
+  filter: brightness(1.15);
+  z-index: 9999 !important;
+  /* `scale` is an individual transform property — composes with
+     the inline `rotate` and `translate` without overriding them. */
+  scale: 1.05;
+}
+
+/* Ghost appearance while being dragged (class applied via JS on dragstart/dragend) */
+.hand-card.is-dragging {
+  opacity: 0.7;
+}
