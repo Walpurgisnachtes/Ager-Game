@@ -1,3 +1,5 @@
+import { useRef } from "react";
+
 const STARS = Array.from({ length: 150 }, (_, i) => ({
   id: i,
   top: Math.random() * 100,
@@ -9,6 +11,17 @@ const STARS = Array.from({ length: 150 }, (_, i) => ({
 }));
 
 export default function HomePage({ onStart }) {
+  const loadRef = useRef(null);
+  const handleLoad = () => loadRef.current?.click();
+  const onFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => onStart({ savedMap: ev.target.result.trim() });
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   return (
     <div
       className="min-h-screen flex flex-col overflow-hidden relative"
@@ -71,7 +84,7 @@ export default function HomePage({ onStart }) {
           {["Start", "Save", "Load"].map((label) => (
             <button
               key={label}
-              onClick={label === "Start" ? onStart : undefined}
+              onClick={label === "Start" ? () => onStart(null) : label === "Load" ? handleLoad : undefined}
               className="text-sm font-medium transition-all duration-200"
               style={{
                 padding: "0.45rem 1.1rem",
@@ -159,6 +172,7 @@ export default function HomePage({ onStart }) {
       </footer>
 
       {/* ── Keyframe Styles ── */}
+      <input ref={loadRef} type="file" accept=".sav" style={{ display: "none" }} onChange={onFileChange} />
       <style>{`
         @keyframes twinkle {
           0%, 100% { opacity: var(--op, 0.6); transform: scale(1); }

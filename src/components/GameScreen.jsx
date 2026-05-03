@@ -5,6 +5,9 @@
 // ─────────────────────────────────────────────
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { generateMap, toString as mapToString, fromString as mapFromString, MAP_W, MAP_H } from "../systems/mapGenerationSystem";
+
+const _terrainIconsGlob = import.meta.glob("../assets/images/world_icons/*.png", { eager: true });
 import { DragProvider, useDropZone } from "../systems/dragSystem";
 import { canDrop, EQUIPMENT_SLOTS, SAMPLE_HAND } from "../systems/cardSystem";
 import HandCards from "./HandCards";
@@ -99,14 +102,21 @@ function EquipSlot({ slotKey, slotDef, equippedCard, onEquip }) {
 
 // ── World Grid ────────────────────────────────────────────────────────────────
 const TILE_SIZE = 64; // px per tile at zoom 1×
-const GRID_COLS = 10;
-const GRID_ROWS = 6;
+const GRID_COLS = MAP_W;  // full 256-tile width
+const GRID_ROWS = MAP_H;  // full 256-tile height
+
+const TERRAIN_ICONS = Object.fromEntries(
+    Object.entries(_terrainIconsGlob).map(([path, mod]) => [
+        path.replace(/^.*\/([^/]+)\.png$/, "$1"),
+        mod.default,
+    ])
+);
 
 /**
  * Individual world grid cell — absolutely positioned, sized by the camera.
  * left/top/size are pre-computed screen-space values supplied by WorldGrid.
  */
-function WorldCell({ cellKey, cellCard, onDrop, left, top, size }) {
+function WorldCell({ cellKey, cellCard, onDrop, left, top, size, terrainTile }) {
     const { isOver, accepts, dropProps } = useDropZone("world", cellKey, canDrop, onDrop);
 
     return (
@@ -121,30 +131,38 @@ function WorldCell({ cellKey, cellCard, onDrop, left, top, size }) {
                 position: "absolute",
                 left,
                 top,
-                width: size - 1,  // 1px gap between tiles
+                width: size - 1,
                 height: size - 1,
                 border: "1px solid rgba(255,255,255,0.04)",
                 borderRadius: "0.2rem",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                background: "rgba(255,255,255,0.01)",
                 overflow: "hidden",
                 boxSizing: "border-box",
             }}
-            title={cellCard ? `${cellCard.name} [${cellCard.rarity}]` : ""}
+            title={cellCard ? `${cellCard.name} [${cellCard.rarity}]` : terrainTile ?? ""}
         >
-            {cellCard && (cellCard.worldArt ?? cellCard.art) ? (
+            {cellCard ? (
+                (cellCard.worldArt ?? cellCard.art) ? (
+                    <img
+                        src={cellCard.worldArt ?? cellCard.art}
+                        alt={cellCard.name}
+                        style={{ width: "80%", height: "80%", objectFit: "contain", imageRendering: "auto" }}
+                        draggable={false}
+                    />
+                ) : (
+                    <span style={{ fontSize: "0.48rem", color: "#c5cae9", textAlign: "center", padding: "2px", lineHeight: 1.2 }}>
+                        {cellCard.name}
+                    </span>
+                )
+            ) : TERRAIN_ICONS[terrainTile] ? (
                 <img
-                    src={cellCard.worldArt ?? cellCard.art}
-                    alt={cellCard.name}
-                    style={{ width: "80%", height: "80%", objectFit: "contain", imageRendering: "pixelated" }}
+                    src={TERRAIN_ICONS[terrainTile]}
+                    alt={terrainTile}
+                    style={{ width: "80%", height: "80%", objectFit: "cover", imageRendering: "auto" }}
                     draggable={false}
                 />
-            ) : cellCard ? (
-                <span style={{ fontSize: "0.48rem", color: "#c5cae9", textAlign: "center", padding: "2px", lineHeight: 1.2 }}>
-                    {cellCard.name}
-                </span>
             ) : null}
         </div>
     );
@@ -157,7 +175,7 @@ function WorldCell({ cellKey, cellCard, onDrop, left, top, size }) {
  * – Middle-click → reset position and zoom
  * Only tiles at least partially inside the viewport are rendered.
  */
-function WorldGrid({ worldGrid, onWorldDrop }) {
+function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
     const viewportRef     = useRef(null);
     const [vpSize, setVpSize]       = useState({ w: 0, h: 0 });
     const [cam, setCam]             = useState({ x: 0, y: 0, zoom: 1.0 });
@@ -260,6 +278,7 @@ function WorldGrid({ worldGrid, onWorldDrop }) {
     for (let row = rowStart; row < rowEnd; row++) {
         for (let col = colStart; col < colEnd; col++) {
             const key = `${row}-${col}`;
+            const terrainTile = worldMap ? worldMap[row * MAP_W + col] : null;
             tiles.push(
                 <WorldCell
                     key={key}
@@ -269,6 +288,7 @@ function WorldGrid({ worldGrid, onWorldDrop }) {
                     left={camX + col * tileW}
                     top={camY + row * tileW}
                     size={tileW}
+                    terrainTile={terrainTile}
                 />
             );
         }
@@ -294,12 +314,40 @@ function WorldGrid({ worldGrid, onWorldDrop }) {
 }
 
 // ── Inner game content (must be a child of DragProvider) ─────────────────────
-function GameScreenContent({ onMenu }) {
+function GameScreenContent({ onMenu, startData }) {
     const [hand, setHand] = useState(SAMPLE_HAND);
     const [equipment, setEquipment] = useState(
         Object.fromEntries(Object.keys(EQUIPMENT_SLOTS).map((k) => [k, null]))
     );
     const [worldGrid, setWorldGrid] = useState({});
+    const [worldMap, setWorldMap] = useState(() =>
+        startData?.savedMap ? mapFromString(startData.savedMap) : generateMap(Date.now())
+    );
+    const loadFileRef = useRef(null);
+
+    const handleSave = useCallback(() => {
+        const content = mapToString(worldMap);
+        const blob = new Blob([content], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "save.sav";
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [worldMap]);
+
+    const handleLoad = useCallback(() => { loadFileRef.current?.click(); }, []);
+
+    const onLoadFileChange = useCallback((e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try { setWorldMap(mapFromString(ev.target.result.trim())); } catch { /* invalid .sav */ }
+        };
+        reader.readAsText(file);
+        e.target.value = "";
+    }, []);
 
     const removeFromHand = useCallback((cardId) => {
         setHand((prev) => prev.filter((c) => c.id !== cardId));
@@ -333,10 +381,14 @@ function GameScreenContent({ onMenu }) {
                     Farmer in the Night
                 </span>
                 <nav className="flex items-center gap-2">
-                    {["Save", "Load", "Menu"].map((label) => (
+                    {[
+                        { label: "Save", onClick: handleSave },
+                        { label: "Load", onClick: handleLoad },
+                        { label: "Menu", onClick: onMenu },
+                    ].map(({ label, onClick }) => (
                         <button
                             key={label}
-                            onClick={label === "Menu" ? onMenu : undefined}
+                            onClick={onClick}
                             className="text-xs font-medium"
                             style={{ padding: "0.35rem 0.9rem", borderRadius: "0.6rem", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#c5cae9", cursor: "pointer", transition: "background 0.2s" }}
                             onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
@@ -386,7 +438,7 @@ function GameScreenContent({ onMenu }) {
                 </aside>
 
                 {/* World Grid */}
-                <WorldGrid worldGrid={worldGrid} onWorldDrop={handleWorldDrop} />
+                <WorldGrid worldGrid={worldGrid} onWorldDrop={handleWorldDrop} worldMap={worldMap} />
 
                 {/* Right Panel — Equipment only */}
                 <aside className="flex flex-col shrink-0" style={{ width: 180, ...PANEL, padding: "0.85rem", overflowY: "auto" }}>
@@ -409,6 +461,15 @@ function GameScreenContent({ onMenu }) {
             {/* ── Hand Cards fan overlay ── */}
             <HandCards hand={hand} />
 
+            {/* hidden file input for in-game map loading */}
+            <input
+                ref={loadFileRef}
+                type="file"
+                accept=".sav"
+                style={{ display: "none" }}
+                onChange={onLoadFileChange}
+            />
+
             {/* ── Footer ── */}
             <footer
                 className="relative z-20 py-3 text-center text-xs"
@@ -430,10 +491,10 @@ function GameScreenContent({ onMenu }) {
 }
 
 // ── Public export — wraps content in DragProvider ────────────────────────────
-export default function GameScreen({ onMenu }) {
+export default function GameScreen({ onMenu, startData }) {
     return (
         <DragProvider>
-            <GameScreenContent onMenu={onMenu} />
+            <GameScreenContent onMenu={onMenu} startData={startData} />
         </DragProvider>
     );
 }
