@@ -112,12 +112,35 @@ const TERRAIN_ICONS = Object.fromEntries(
     ])
 );
 
+// Maps tile IDs to variant icon name arrays.
+// When variants exist they are picked by a position hash (deterministic per tile).
+// Falls back to an icon named after the tile ID itself if no variants match.
+const TERRAIN_VARIANTS = {
+    grass: ["grass_1", "grass_2", "grass_3"],
+};
+
+function resolveTerrainIcon(terrainTile, cellKey) {
+    const names = TERRAIN_VARIANTS[terrainTile];
+    if (names?.length) {
+        const variants = names.map((k) => TERRAIN_ICONS[k]).filter(Boolean);
+        if (variants.length > 0) {
+            const hash = cellKey.split('').reduce((acc, char) => {
+                return (acc << 5) - acc + char.charCodeAt(0);
+            }, 0);
+
+            return variants[Math.abs(hash) % variants.length];
+        }
+    }
+    return TERRAIN_ICONS[terrainTile] ?? null;
+}
+
 /**
  * Individual world grid cell — absolutely positioned, sized by the camera.
  * left/top/size are pre-computed screen-space values supplied by WorldGrid.
  */
 function WorldCell({ cellKey, cellCard, onDrop, left, top, size, terrainTile }) {
     const { isOver, accepts, dropProps } = useDropZone("world", cellKey, canDrop, onDrop);
+    const terrainIcon = resolveTerrainIcon(terrainTile, cellKey);
 
     return (
         <div
@@ -156,9 +179,9 @@ function WorldCell({ cellKey, cellCard, onDrop, left, top, size, terrainTile }) 
                         {cellCard.name}
                     </span>
                 )
-            ) : TERRAIN_ICONS[terrainTile] ? (
+            ) : terrainIcon ? (
                 <img
-                    src={TERRAIN_ICONS[terrainTile]}
+                    src={terrainIcon}
                     alt={terrainTile}
                     style={{ width: "80%", height: "80%", objectFit: "cover", imageRendering: "auto" }}
                     draggable={false}
@@ -176,12 +199,12 @@ function WorldCell({ cellKey, cellCard, onDrop, left, top, size, terrainTile }) 
  * Only tiles at least partially inside the viewport are rendered.
  */
 function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
-    const viewportRef     = useRef(null);
-    const [vpSize, setVpSize]       = useState({ w: 0, h: 0 });
-    const [cam, setCam]             = useState({ x: 0, y: 0, zoom: 1.0 });
+    const viewportRef = useRef(null);
+    const [vpSize, setVpSize] = useState({ w: 0, h: 0 });
+    const [cam, setCam] = useState({ x: 0, y: 0, zoom: 1.0 });
     const [isPanning, setIsPanning] = useState(false);
-    const camRef         = useRef(cam);   // always holds latest cam without stale-closure issues
-    const panRef         = useRef(null);  // { x, y, camX, camY } snapshot at pan-start
+    const camRef = useRef(cam);   // always holds latest cam without stale-closure issues
+    const panRef = useRef(null);  // { x, y, camX, camY } snapshot at pan-start
     const initializedRef = useRef(false); // guard: center the grid only once
 
     // Keep camRef current
@@ -216,11 +239,11 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         if (!el) return;
         const handler = (e) => {
             e.preventDefault();
-            const rect   = el.getBoundingClientRect();
-            const mx     = e.clientX - rect.left;
-            const my     = e.clientY - rect.top;
-            const c      = camRef.current;
-            const factor  = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+            const rect = el.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            const c = camRef.current;
+            const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
             const newZoom = Math.min(3.0, Math.max(0.5, c.zoom * factor));
             // Keep the world point under the cursor stationary
             const worldX = (mx - c.x) / c.zoom;
@@ -268,11 +291,11 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
 
     // Compute visible tile range — tiles fully outside the viewport are skipped
     const { x: camX, y: camY, zoom } = cam;
-    const tileW    = TILE_SIZE * zoom;
+    const tileW = TILE_SIZE * zoom;
     const colStart = Math.max(0, Math.floor(-camX / tileW));
-    const colEnd   = Math.min(GRID_COLS, Math.ceil((vpSize.w - camX) / tileW));
+    const colEnd = Math.min(GRID_COLS, Math.ceil((vpSize.w - camX) / tileW));
     const rowStart = Math.max(0, Math.floor(-camY / tileW));
-    const rowEnd   = Math.min(GRID_ROWS, Math.ceil((vpSize.h - camY) / tileW));
+    const rowEnd = Math.min(GRID_ROWS, Math.ceil((vpSize.h - camY) / tileW));
 
     const tiles = [];
     for (let row = rowStart; row < rowEnd; row++) {
