@@ -8,8 +8,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { generateMap, toString as mapToString, fromString as mapFromString, MAP_W, MAP_H } from "../systems/mapGenerationSystem";
 
 const _terrainIconsGlob = import.meta.glob("../assets/images/world_icons/*.png", { eager: true });
-import { DragProvider, useDropZone } from "../systems/dragSystem";
-import { canDrop, SAMPLE_HAND, getCardsById } from "../systems/cardSystem";
+import { DragProvider, useDragContext } from "../systems/dragSystem";
+import { canDrop, SAMPLE_HAND, getCardsById, ALL_CARDS } from "../systems/cardSystem";
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
@@ -190,211 +190,295 @@ const TERRAIN_VARIANTS = {
     grass: ["grass_1", "grass_2", "grass_3"],
 };
 
-function resolveTerrainIcon(terrainTile, cellKey) {
+// Pre-create HTMLImageElement for every terrain icon URL (for canvas drawImage).
+// Data-URI sources (singlefile build) load synchronously; regular URLs load async.
+const TERRAIN_IMGS = {};
+for (const [name, url] of Object.entries(TERRAIN_ICONS)) {
+    const img = new Image();
+    img.src = url;
+    TERRAIN_IMGS[name] = img;
+}
+
+// Pre-create HTMLImageElement for every card's world art / card art.
+// Keyed by card id for fast O(1) lookup during canvas paint.
+const CARD_IMGS = {};
+for (const card of ALL_CARDS) {
+    const url = card.worldArt ?? card.art;
+    if (!url) continue;
+    const img = new Image();
+    img.src = url;
+    CARD_IMGS[card.id] = img;
+}
+
+function resolveTerrainImg(terrainTile, cellKey) {
     const names = TERRAIN_VARIANTS[terrainTile];
     if (names?.length) {
-        const variants = names.map((k) => TERRAIN_ICONS[k]).filter(Boolean);
-        if (variants.length > 0) {
-            const hash = cellKey.split('').reduce((acc, char) => {
-                return (acc << 5) - acc + char.charCodeAt(0);
-            }, 0);
-
-            return variants[Math.abs(hash) % variants.length];
+        const available = names.filter((k) => TERRAIN_IMGS[k]);
+        if (available.length > 0) {
+            const hash = cellKey.split('').reduce((acc, c) => (acc << 5) - acc + c.charCodeAt(0), 0);
+            return TERRAIN_IMGS[available[Math.abs(hash) % available.length]];
         }
     }
-    return TERRAIN_ICONS[terrainTile] ?? null;
+    return TERRAIN_IMGS[terrainTile] ?? null;
 }
 
-/**
- * Individual world grid cell — absolutely positioned, sized by the camera.
- * left/top/size are pre-computed screen-space values supplied by WorldGrid.
- */
-function WorldCell({ cellKey, cellCard, onDrop, left, top, size, terrainTile }) {
-    const { isOver, accepts, dropProps } = useDropZone("world", cellKey, canDrop, onDrop);
-    const terrainIcon = resolveTerrainIcon(terrainTile, cellKey);
-
-    return (
-        <div
-            {...dropProps}
-            className={[
-                cellCard ? `card-base card-rarity-${cellCard.rarity.toLowerCase()}` : "",
-                isOver && accepts ? "drop-zone-active" : "",
-                isOver && !accepts ? "drop-zone-reject" : "",
-            ].filter(Boolean).join(" ")}
-            style={{
-                position: "absolute",
-                left,
-                top,
-                width: size - 1,
-                height: size - 1,
-                border: "1px solid rgba(255,255,255,0.04)",
-                borderRadius: "0.2rem",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                boxSizing: "border-box",
-            }}
-            title={cellCard ? `${cellCard.name} [${cellCard.rarity}]` : terrainTile ?? ""}
-        >
-            {cellCard ? (
-                (cellCard.worldArt ?? cellCard.art) ? (
-                    <img
-                        src={cellCard.worldArt ?? cellCard.art}
-                        alt={cellCard.name}
-                        style={{ width: "80%", height: "80%", objectFit: "contain", imageRendering: "auto" }}
-                        draggable={false}
-                    />
-                ) : (
-                    <span style={{ fontSize: "0.48rem", color: "#c5cae9", textAlign: "center", padding: "2px", lineHeight: 1.2 }}>
-                        {cellCard.name}
-                    </span>
-                )
-            ) : terrainIcon ? (
-                <img
-                    src={terrainIcon}
-                    alt={terrainTile}
-                    style={{ width: "80%", height: "80%", objectFit: "cover", imageRendering: "auto" }}
-                    draggable={false}
-                />
-            ) : null}
-        </div>
-    );
-}
+// Rarity border colours used when drawing placed cards on canvas.
+const RARITY_COLORS = {
+    // common:    "#78909c",
+    // rare:      "#42a5f5",
+    // epic:      "#ab47bc",
+    legendary: "#ffa726",
+};
 
 /**
- * World viewport with pan + zoom camera.
- * – Left-drag   → pan
+ * Canvas-based world viewport.
+ * Terrain is painted onto a <canvas> — zero per-tile DOM nodes.
+ * Only placed-card overlays are DOM elements (at most a handful at a time).
+ * – Left-drag    → pan
  * – Scroll wheel → zoom toward cursor (0.5× – 3.0×)
- * – Middle-click → reset position and zoom
- * Only tiles at least partially inside the viewport are rendered.
+ * – Middle-click → re-center on Center of the World tile
  */
 function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
-    const viewportRef = useRef(null);
-    const [vpSize, setVpSize] = useState({ w: 0, h: 0 });
-    const [cam, setCam] = useState({ x: 0, y: 0, zoom: 1.0 });
+    const containerRef  = useRef(null);
+    const canvasRef     = useRef(null);
+    const vpSizeRef     = useRef({ w: 0, h: 0 });
+    const camRef        = useRef({ x: 0, y: 0, zoom: 1.0 });
     const [isPanning, setIsPanning] = useState(false);
-    const camRef = useRef(cam);   // always holds latest cam without stale-closure issues
-    const panRef = useRef(null);  // { x, y, camX, camY } snapshot at pan-start
-    const initializedRef = useRef(false); // guard: center the grid only once
+    const panRef        = useRef(null);
+    const initializedRef = useRef(false);
+    const hoverTileRef  = useRef(null); // { row, col } | null  — highlighted during drag
+    const rafRef        = useRef(null); // pending animation-frame id
+    const drawCanvasRef = useRef(null); // always points to latest drawCanvas closure
 
-    // Keep camRef current
-    useEffect(() => { camRef.current = cam; }, [cam]);
+    // Refs for latest props so drawCanvas never reads stale closure values
+    const worldMapRef  = useRef(worldMap);
+    const worldGridRef = useRef(worldGrid);
+    useEffect(() => { worldMapRef.current  = worldMap;  schedDraw(); }, [worldMap]);   // eslint-disable-line
+    useEffect(() => { worldGridRef.current = worldGrid; schedDraw(); }, [worldGrid]);  // eslint-disable-line
 
-    // Measure viewport; on first valid measurement center the grid
+    const { dragging } = useDragContext();
+    const draggingRef = useRef(dragging);
+    useEffect(() => { draggingRef.current = dragging; schedDraw(); }, [dragging]); // eslint-disable-line
+
+    /** Schedule one repaint per animation frame (deduplicated). */
+    const schedDraw = useCallback(() => {
+        if (rafRef.current) return;
+        rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null;
+            drawCanvasRef.current?.();
+        });
+    }, []);
+
+    // Imperatively paint the canvas — all data comes from refs, never stale.
+    // Assigned to drawCanvasRef.current each render so schedDraw always calls the fresh version.
+    drawCanvasRef.current = function drawCanvas() {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const { w, h } = vpSizeRef.current;
+        if (w === 0 || h === 0) return;
+
+        const { x: camX, y: camY, zoom } = camRef.current;
+        const tileW = TILE_SIZE * zoom;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const colStart = Math.max(0, Math.floor(-camX / tileW));
+        const colEnd   = Math.min(MAP_W, Math.ceil((w - camX) / tileW));
+        const rowStart = Math.max(0, Math.floor(-camY / tileW));
+        const rowEnd   = Math.min(MAP_H, Math.ceil((h - camY) / tileW));
+
+        const wMap   = worldMapRef.current;
+        const wGrid  = worldGridRef.current;
+        const hover  = hoverTileRef.current;
+        const card   = draggingRef.current;
+
+        for (let row = rowStart; row < rowEnd; row++) {
+            for (let col = colStart; col < colEnd; col++) {
+                const px  = Math.floor(camX + col * tileW);
+                const py  = Math.floor(camY + row * tileW);
+                const tw  = Math.ceil(tileW);
+                const key = `${row}-${col}`;
+
+                // Grid outline
+                ctx.strokeStyle = "rgba(255,255,255,0.04)";
+                ctx.lineWidth   = 1;
+                ctx.strokeRect(px + 0.5, py + 0.5, tw - 1, tw - 1);
+
+                // Terrain icon
+                const terrainTile = wMap ? wMap[row * MAP_W + col] : null;
+                const terrainImg  = resolveTerrainImg(terrainTile, key);
+                if (terrainImg?.complete && terrainImg.naturalWidth > 0) {
+                    const pad = tw * 0.1;
+                    ctx.drawImage(terrainImg, px + pad, py + pad, tw - pad * 2, tw - pad * 2);
+                }
+
+                // Placed card — drawn on top of terrain
+                const placedCard = wGrid[key];
+                if (placedCard) {
+                    const rarity = placedCard.rarity?.toLowerCase();
+                    const borderColor = RARITY_COLORS[rarity] ?? "#00000000";
+                    // Rarity border
+                    ctx.strokeStyle = borderColor;
+                    ctx.lineWidth   = Math.max(1.5, tw * 0.04);
+                    ctx.strokeRect(px + 1, py + 1, tw - 2, tw - 2);
+                    // Subtle background tint
+                    ctx.fillStyle = "rgba(3,6,15,0.55)";
+                    ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
+                    // Art image
+                    const cardImg = CARD_IMGS[placedCard.id];
+                    if (cardImg?.complete && cardImg.naturalWidth > 0) {
+                        const pad = tw * 0.1;
+                        ctx.drawImage(cardImg, px + pad, py + pad, tw - pad * 2, tw - pad * 2);
+                    } else {
+                        // Fallback: card name text
+                        ctx.fillStyle = "#c5cae9";
+                        ctx.font = `${Math.max(8, tw * 0.12)}px Inter,sans-serif`;
+                        ctx.textAlign    = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(placedCard.name, px + tw / 2, py + tw / 2, tw - 4);
+                    }
+                }
+
+                // Drop-hover highlight (only while dragging a card)
+                if (card && hover && hover.row === row && hover.col === col) {
+                    const ok = canDrop(card, "world");
+                    ctx.fillStyle = ok ? "rgba(67,160,71,0.3)" : "rgba(229,57,53,0.3)";
+                    ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
+                }
+            }
+        }
+    };
+
+    // ── Resize observer — also sets canvas backing-store size ────────────────
     useEffect(() => {
-        const el = viewportRef.current;
+        const el = containerRef.current;
         if (!el) return;
         const ro = new ResizeObserver(() => {
             const w = el.clientWidth;
             const h = el.clientHeight;
-            setVpSize({ w, h });
+            vpSizeRef.current = { w, h };
+            if (canvasRef.current) {
+                canvasRef.current.width  = w;
+                canvasRef.current.height = h;
+            }
             if (!initializedRef.current && w > 0 && h > 0) {
                 initializedRef.current = true;
-                const centerCol = Math.floor(MAP_W / 2);
-                const centerRow = Math.floor(MAP_H / 2);
                 const init = {
-                    x: Math.round(w / 2 - (centerCol + 0.5) * TILE_SIZE),
-                    y: Math.round(h / 2 - (centerRow + 0.5) * TILE_SIZE),
+                    x: Math.round(w / 2 - (Math.floor(MAP_W / 2) + 0.5) * TILE_SIZE),
+                    y: Math.round(h / 2 - (Math.floor(MAP_H / 2) + 0.5) * TILE_SIZE),
                     zoom: 1.0,
                 };
-                setCam(init);
                 camRef.current = init;
             }
+            schedDraw();
         });
         ro.observe(el);
         return () => ro.disconnect();
-    }, []);
+    }, [schedDraw]);
 
-    // Wheel must be non-passive so preventDefault() works
+    // Trigger canvas repaints when async image loads complete (non-singlefile builds)
     useEffect(() => {
-        const el = viewportRef.current;
+        const handlers = [];
+        for (const img of [...Object.values(TERRAIN_IMGS), ...Object.values(CARD_IMGS)]) {
+            if (!img.complete) {
+                const fn = () => schedDraw();
+                img.addEventListener("load", fn);
+                handlers.push([img, fn]);
+            }
+        }
+        return () => handlers.forEach(([img, fn]) => img.removeEventListener("load", fn));
+    }, [schedDraw]);
+
+    // ── Wheel zoom — non-passive so preventDefault works ──────────────────────
+    useEffect(() => {
+        const el = containerRef.current;
         if (!el) return;
         const handler = (e) => {
             e.preventDefault();
             const rect = el.getBoundingClientRect();
             const mx = e.clientX - rect.left;
             const my = e.clientY - rect.top;
-            const c = camRef.current;
-            const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+            const c  = camRef.current;
+            const factor  = e.deltaY < 0 ? 1.1 : 1 / 1.1;
             const newZoom = Math.min(3.0, Math.max(0.5, c.zoom * factor));
-            // Keep the world point under the cursor stationary
-            const worldX = (mx - c.x) / c.zoom;
-            const worldY = (my - c.y) / c.zoom;
+            const worldX  = (mx - c.x) / c.zoom;
+            const worldY  = (my - c.y) / c.zoom;
             const next = { zoom: newZoom, x: mx - worldX * newZoom, y: my - worldY * newZoom };
             camRef.current = next;
-            setCam(next);
+            schedDraw();
         };
         el.addEventListener("wheel", handler, { passive: false });
         return () => el.removeEventListener("wheel", handler);
-    }, []);
+    }, [schedDraw]);
 
+    // ── Pointer events (pan) ─────────────────────────────────────────────────
     const onPointerDown = (e) => {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         setIsPanning(true);
         panRef.current = { x: e.clientX, y: e.clientY, camX: camRef.current.x, camY: camRef.current.y };
     };
-
     const onPointerMove = (e) => {
         if (!panRef.current) return;
-        const next = {
-            ...camRef.current,
-            x: panRef.current.camX + (e.clientX - panRef.current.x),
-            y: panRef.current.camY + (e.clientY - panRef.current.y),
-        };
+        const next = { ...camRef.current, x: panRef.current.camX + (e.clientX - panRef.current.x), y: panRef.current.camY + (e.clientY - panRef.current.y) };
         camRef.current = next;
-        setCam(next);
+        schedDraw();
     };
-
     const onPointerUp = () => { panRef.current = null; setIsPanning(false); };
 
-    // Middle mouse → re-center camera on the Center of the World tile
+    // ── Middle-click: re-center on Center of the World ───────────────────────
     const onMouseDown = (e) => {
         if (e.button !== 1) return;
         e.preventDefault();
-        const centerCol = Math.floor(MAP_W / 2);
-        const centerRow = Math.floor(MAP_H / 2);
+        const { w, h } = vpSizeRef.current;
         const next = {
-            x: Math.round(vpSize.w / 2 - (centerCol + 0.5) * TILE_SIZE),
-            y: Math.round(vpSize.h / 2 - (centerRow + 0.5) * TILE_SIZE),
+            x: Math.round(w / 2 - (Math.floor(MAP_W / 2) + 0.5) * TILE_SIZE),
+            y: Math.round(h / 2 - (Math.floor(MAP_H / 2) + 0.5) * TILE_SIZE),
             zoom: 1.0,
         };
         camRef.current = next;
-        setCam(next);
+        schedDraw();
     };
 
-    // Compute visible tile range — tiles fully outside the viewport are skipped
-    const { x: camX, y: camY, zoom } = cam;
-    const tileW = TILE_SIZE * zoom;
-    const colStart = Math.max(0, Math.floor(-camX / tileW));
-    const colEnd = Math.min(GRID_COLS, Math.ceil((vpSize.w - camX) / tileW));
-    const rowStart = Math.max(0, Math.floor(-camY / tileW));
-    const rowEnd = Math.min(GRID_ROWS, Math.ceil((vpSize.h - camY) / tileW));
+    // ── Drag-over / drop — compute tile from cursor position ─────────────────
+    const screenToTile = (screenX, screenY) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return null;
+        const { x, y, zoom } = camRef.current;
+        const tileW = TILE_SIZE * zoom;
+        const col = Math.floor((screenX - rect.left - x) / tileW);
+        const row = Math.floor((screenY - rect.top  - y) / tileW);
+        return (col >= 0 && col < MAP_W && row >= 0 && row < MAP_H) ? { row, col } : null;
+    };
 
-    const tiles = [];
-    for (let row = rowStart; row < rowEnd; row++) {
-        for (let col = colStart; col < colEnd; col++) {
-            const key = `${row}-${col}`;
-            const terrainTile = worldMap ? worldMap[row * MAP_W + col] : null;
-            tiles.push(
-                <WorldCell
-                    key={key}
-                    cellKey={key}
-                    cellCard={worldGrid[key] ?? null}
-                    onDrop={onWorldDrop(key)}
-                    left={camX + col * tileW}
-                    top={camY + row * tileW}
-                    size={tileW}
-                    terrainTile={terrainTile}
-                />
-            );
+    const onDragOver = (e) => {
+        e.preventDefault();
+        const tile = screenToTile(e.clientX, e.clientY);
+        const prev = hoverTileRef.current;
+        if (!tile || tile.row !== prev?.row || tile.col !== prev?.col) {
+            hoverTileRef.current = tile;
+            schedDraw();
         }
-    }
+    };
+    const onDragLeave = (e) => {
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        hoverTileRef.current = null;
+        schedDraw();
+    };
+    const onDrop = (e) => {
+        e.preventDefault();
+        const tile = screenToTile(e.clientX, e.clientY);
+        hoverTileRef.current = null;
+        schedDraw();
+        const card = draggingRef.current;
+        if (!tile || !card || !canDrop(card, "world")) return;
+        onWorldDrop(`${tile.row}-${tile.col}`)(card);
+    };
 
     return (
         <div
-            ref={viewportRef}
+            ref={containerRef}
             className="flex-1 relative overflow-hidden"
             style={{ ...PANEL, minWidth: 0, cursor: isPanning ? "grabbing" : "grab", userSelect: "none" }}
             onPointerDown={onPointerDown}
@@ -402,11 +486,17 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
             onPointerUp={onPointerUp}
             onPointerLeave={onPointerUp}
             onMouseDown={onMouseDown}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
         >
+            <canvas
+                ref={canvasRef}
+                style={{ position: "absolute", top: 0, left: 0, display: "block", pointerEvents: "none" }}
+            />
             <span style={{ position: "absolute", top: "0.5rem", left: "0.75rem", ...LABEL, zIndex: 10, pointerEvents: "none" }}>
                 World
             </span>
-            {tiles}
         </div>
     );
 }
