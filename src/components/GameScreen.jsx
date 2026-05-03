@@ -4,7 +4,7 @@
 //  Bottom overlay: HandCards (fan)
 // ─────────────────────────────────────────────
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { DragProvider, useDropZone } from "../systems/dragSystem";
 import { canDrop, EQUIPMENT_SLOTS, SAMPLE_HAND } from "../systems/cardSystem";
 import HandCards from "./HandCards";
@@ -98,14 +98,15 @@ function EquipSlot({ slotKey, slotDef, equippedCard, onEquip }) {
 }
 
 // ── World Grid ────────────────────────────────────────────────────────────────
+const TILE_SIZE = 64; // px per tile at zoom 1×
 const GRID_COLS = 10;
 const GRID_ROWS = 6;
 
 /**
- * Individual world grid cell — a drop zone for world-compatible cards.
- * Cards with tags matching WORLD_GRID_ACCEPTS can be dropped here.
+ * Individual world grid cell — absolutely positioned, sized by the camera.
+ * left/top/size are pre-computed screen-space values supplied by WorldGrid.
  */
-function WorldCell({ cellKey, cellCard, onDrop }) {
+function WorldCell({ cellKey, cellCard, onDrop, left, top, size }) {
     const { isOver, accepts, dropProps } = useDropZone("world", cellKey, canDrop, onDrop);
 
     return (
@@ -117,6 +118,11 @@ function WorldCell({ cellKey, cellCard, onDrop }) {
                 isOver && !accepts ? "drop-zone-reject" : "",
             ].filter(Boolean).join(" ")}
             style={{
+                position: "absolute",
+                left,
+                top,
+                width: size - 1,  // 1px gap between tiles
+                height: size - 1,
                 border: "1px solid rgba(255,255,255,0.04)",
                 borderRadius: "0.2rem",
                 display: "flex",
@@ -124,8 +130,7 @@ function WorldCell({ cellKey, cellCard, onDrop }) {
                 justifyContent: "center",
                 background: "rgba(255,255,255,0.01)",
                 overflow: "hidden",
-                transition: "all 0.15s",
-                cursor: "default",
+                boxSizing: "border-box",
             }}
             title={cellCard ? `${cellCard.name} [${cellCard.rarity}]` : ""}
         >
@@ -133,9 +138,7 @@ function WorldCell({ cellKey, cellCard, onDrop }) {
                 <img
                     src={cellCard.worldArt ?? cellCard.art}
                     alt={cellCard.name}
-                    style={{
-                        objectFit: "contain",
-                    }}
+                    style={{ width: "80%", height: "80%", objectFit: "contain", imageRendering: "pixelated" }}
                     draggable={false}
                 />
             ) : cellCard ? (
@@ -143,6 +146,149 @@ function WorldCell({ cellKey, cellCard, onDrop }) {
                     {cellCard.name}
                 </span>
             ) : null}
+        </div>
+    );
+}
+
+/**
+ * World viewport with pan + zoom camera.
+ * – Left-drag   → pan
+ * – Scroll wheel → zoom toward cursor (0.5× – 3.0×)
+ * – Middle-click → reset position and zoom
+ * Only tiles at least partially inside the viewport are rendered.
+ */
+function WorldGrid({ worldGrid, onWorldDrop }) {
+    const viewportRef     = useRef(null);
+    const [vpSize, setVpSize]       = useState({ w: 0, h: 0 });
+    const [cam, setCam]             = useState({ x: 0, y: 0, zoom: 1.0 });
+    const [isPanning, setIsPanning] = useState(false);
+    const camRef         = useRef(cam);   // always holds latest cam without stale-closure issues
+    const panRef         = useRef(null);  // { x, y, camX, camY } snapshot at pan-start
+    const initializedRef = useRef(false); // guard: center the grid only once
+
+    // Keep camRef current
+    useEffect(() => { camRef.current = cam; }, [cam]);
+
+    // Measure viewport; on first valid measurement center the grid
+    useEffect(() => {
+        const el = viewportRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(() => {
+            const w = el.clientWidth;
+            const h = el.clientHeight;
+            setVpSize({ w, h });
+            if (!initializedRef.current && w > 0 && h > 0) {
+                initializedRef.current = true;
+                const init = {
+                    x: Math.round((w - GRID_COLS * TILE_SIZE) / 2),
+                    y: Math.round((h - GRID_ROWS * TILE_SIZE) / 2),
+                    zoom: 1.0,
+                };
+                setCam(init);
+                camRef.current = init;
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    // Wheel must be non-passive so preventDefault() works
+    useEffect(() => {
+        const el = viewportRef.current;
+        if (!el) return;
+        const handler = (e) => {
+            e.preventDefault();
+            const rect   = el.getBoundingClientRect();
+            const mx     = e.clientX - rect.left;
+            const my     = e.clientY - rect.top;
+            const c      = camRef.current;
+            const factor  = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+            const newZoom = Math.min(3.0, Math.max(0.5, c.zoom * factor));
+            // Keep the world point under the cursor stationary
+            const worldX = (mx - c.x) / c.zoom;
+            const worldY = (my - c.y) / c.zoom;
+            const next = { zoom: newZoom, x: mx - worldX * newZoom, y: my - worldY * newZoom };
+            camRef.current = next;
+            setCam(next);
+        };
+        el.addEventListener("wheel", handler, { passive: false });
+        return () => el.removeEventListener("wheel", handler);
+    }, []);
+
+    const onPointerDown = (e) => {
+        if (e.button !== 0) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setIsPanning(true);
+        panRef.current = { x: e.clientX, y: e.clientY, camX: camRef.current.x, camY: camRef.current.y };
+    };
+
+    const onPointerMove = (e) => {
+        if (!panRef.current) return;
+        const next = {
+            ...camRef.current,
+            x: panRef.current.camX + (e.clientX - panRef.current.x),
+            y: panRef.current.camY + (e.clientY - panRef.current.y),
+        };
+        camRef.current = next;
+        setCam(next);
+    };
+
+    const onPointerUp = () => { panRef.current = null; setIsPanning(false); };
+
+    // Middle mouse → reset camera
+    const onMouseDown = (e) => {
+        if (e.button !== 1) return;
+        e.preventDefault(); // prevent browser auto-scroll
+        const next = {
+            x: Math.round((vpSize.w - GRID_COLS * TILE_SIZE) / 2),
+            y: Math.round((vpSize.h - GRID_ROWS * TILE_SIZE) / 2),
+            zoom: 1.0,
+        };
+        camRef.current = next;
+        setCam(next);
+    };
+
+    // Compute visible tile range — tiles fully outside the viewport are skipped
+    const { x: camX, y: camY, zoom } = cam;
+    const tileW    = TILE_SIZE * zoom;
+    const colStart = Math.max(0, Math.floor(-camX / tileW));
+    const colEnd   = Math.min(GRID_COLS, Math.ceil((vpSize.w - camX) / tileW));
+    const rowStart = Math.max(0, Math.floor(-camY / tileW));
+    const rowEnd   = Math.min(GRID_ROWS, Math.ceil((vpSize.h - camY) / tileW));
+
+    const tiles = [];
+    for (let row = rowStart; row < rowEnd; row++) {
+        for (let col = colStart; col < colEnd; col++) {
+            const key = `${row}-${col}`;
+            tiles.push(
+                <WorldCell
+                    key={key}
+                    cellKey={key}
+                    cellCard={worldGrid[key] ?? null}
+                    onDrop={onWorldDrop(key)}
+                    left={camX + col * tileW}
+                    top={camY + row * tileW}
+                    size={tileW}
+                />
+            );
+        }
+    }
+
+    return (
+        <div
+            ref={viewportRef}
+            className="flex-1 relative overflow-hidden"
+            style={{ ...PANEL, minWidth: 0, cursor: isPanning ? "grabbing" : "grab", userSelect: "none" }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerLeave={onPointerUp}
+            onMouseDown={onMouseDown}
+        >
+            <span style={{ position: "absolute", top: "0.5rem", left: "0.75rem", ...LABEL, zIndex: 10, pointerEvents: "none" }}>
+                World
+            </span>
+            {tiles}
         </div>
     );
 }
@@ -240,30 +386,7 @@ function GameScreenContent({ onMenu }) {
                 </aside>
 
                 {/* World Grid */}
-                <div className="flex-1 relative overflow-hidden" style={{ ...PANEL, minWidth: 0 }}>
-                    <span style={{ position: "absolute", top: "0.5rem", left: "0.75rem", ...LABEL, zIndex: 1 }}>World</span>
-                    <div style={{
-                        position: "absolute", inset: 0,
-                        display: "grid",
-                        gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)`,
-                        gridTemplateRows: `repeat(${GRID_ROWS}, 1fr)`,
-                        gap: "2px", padding: "2px",
-                    }}>
-                        {Array.from({ length: GRID_ROWS }, (_, row) =>
-                            Array.from({ length: GRID_COLS }, (_, col) => {
-                                const key = `${row}-${col}`;
-                                return (
-                                    <WorldCell
-                                        key={key}
-                                        cellKey={key}
-                                        cellCard={worldGrid[key] ?? null}
-                                        onDrop={handleWorldDrop(key)}
-                                    />
-                                );
-                            })
-                        )}
-                    </div>
-                </div>
+                <WorldGrid worldGrid={worldGrid} onWorldDrop={handleWorldDrop} />
 
                 {/* Right Panel — Equipment only */}
                 <aside className="flex flex-col shrink-0" style={{ width: 180, ...PANEL, padding: "0.85rem", overflowY: "auto" }}>
