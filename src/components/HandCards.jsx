@@ -30,7 +30,7 @@ function HandCard({ card, delta, total }) {
         <div
             {...dragProps}
             className={`hand-card card-base card-rarity-${card.rarity.toLowerCase()}${isDragging ? " is-dragging" : ""}`}
-            title={`${card.name}  [${card.rarity}]\nTags: ${card.tags.join(", ")}\n${card.description}`}
+            title={`${card.name}  [${card.rarity}]\nType: ${card.type}\n${card.description}`}
             style={{
                 position: "absolute",
                 left: `calc(50% + ${delta * SPREAD}px - ${CARD_W / 2}px)`,
@@ -123,7 +123,7 @@ function HandCard({ card, delta, total }) {
                         textOverflow: "ellipsis",
                     }}
                 >
-                    {card.tags.join(" · ")}
+                    {card.type}
                 </span>
 
             </div>

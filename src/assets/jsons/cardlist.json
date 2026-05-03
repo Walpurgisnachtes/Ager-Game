@@ -1,39 +1,127 @@
 [
   {
-    "id": "c1",
-    "name": "Straw Hat",
-    "rarity": "Common",
-    "tags": ["equipment-head"],
-    "description": "A simple woven hat."
+    "id": "0",
+    "name": "Center of the World",
+    "rarity": "Legendary",
+    "type": "structure",
+    "tags": [
+      "invincible",
+      "not-in-deck"
+    ],
+    "description": "Center of the world.",
+    "worldArt": "world_icons/player_base.png"
   },
   {
-    "id": "c2",
-    "name": "Night Wheat Seed",
+    "id": "1",
+    "name": "Night Wheat",
     "rarity": "Common",
-    "tags": ["seed", "item"],
+    "type": "Tile",
+    "tags": [
+      "plant",
+      "weak-fire"
+    ],
+    "daysPerOutput": 4,
+    "recipes": [
+      {
+        "input": [],
+        "output": [
+          {
+            "name": "Night Wheat",
+            "amount": 4
+          }
+        ]
+      }
+    ],
     "description": "Plant in tilled soil at night.",
-    "art": "card_arts/night_wheat_seed.png",
+    "art": "card_arts/night_wheat.png",
     "worldArt": "world_icons/night_wheat.png"
   },
   {
-    "id": "c3",
-    "name": "Iron Hoe",
+    "id": "2",
+    "name": "Mill",
+    "rarity": "Common",
+    "type": "structure",
+    "tags": [
+      "weak-fire"
+    ],
+    "daysPerOutput": 1,
+    "recipes": [
+      {
+        "input": [
+          {
+            "name": "Night Wheat",
+            "amount": 1
+          }
+        ],
+        "output": [
+          {
+            "name": "Night Wheat Flour",
+            "amount": 1
+          }
+        ]
+      }
+    ],
+    "description": "A simple woven hat.",
+    "art": "card_arts/night_mill.png",
+    "worldArt": "world_icons/night_mill.png"
+  },
+  {
+    "id": "3",
+    "name": "Bakery",
     "rarity": "Rare",
-    "tags": ["tool", "equipment-hand"],
-    "description": "Tills the soil efficiently."
+    "type": "structure",
+    "tags": [
+      "weak-fire"
+    ],
+    "daysPerOutput": 1,
+    "recipes": [
+      {
+        "input": [
+          {
+            "name": "Night Wheat Flour",
+            "amount": 1
+          }
+        ],
+        "output": [
+          {
+            "name": "Night Bread",
+            "amount": 1
+          }
+        ]
+      }
+    ],
+    "description": "Tills the soil efficiently.",
+    "art": "card_arts/night_bakery.png",
+    "worldArt": "world_icons/night_bakery.png"
   },
   {
-    "id": "c4",
-    "name": "Moon Cloak",
-    "rarity": "Epic",
-    "tags": ["equipment-body"],
-    "description": "Woven from solidified moonlight."
+    "id": "4",
+    "name": "Zombie House",
+    "rarity": "Common",
+    "type": "structure",
+    "tags": [
+      "weak-fire",
+      "residential"
+    ],
+    "residentType": "Zombie",
+    "residentLimit": 10,
+    "description": "Woven from solidified moonlight.",
+    "art": "card_arts/zombie_house.png",
+    "worldArt": "world_icons/zombie_house.png"
   },
   {
-    "id": "c5",
-    "name": "Night Boots",
-    "rarity": "Legendary",
-    "tags": ["equipment-feet"],
-    "description": "Silent as the abyss."
+    "id": "5",
+    "name": "Skeleton House",
+    "rarity": "Common",
+    "type": "structure",
+    "tags": [
+      "weak-fire",
+      "residential"
+    ],
+    "residentType": "Skeleton",
+    "residentLimit": 10,
+    "description": "Woven from solidified moonlight.",
+    "art": "card_arts/skeleton_house.png",
+    "worldArt": "world_icons/skeleton_house.png"
   }
 ]

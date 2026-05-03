@@ -9,7 +9,7 @@ import { generateMap, toString as mapToString, fromString as mapFromString, MAP_
 
 const _terrainIconsGlob = import.meta.glob("../assets/images/world_icons/*.png", { eager: true });
 import { DragProvider, useDropZone } from "../systems/dragSystem";
-import { canDrop, EQUIPMENT_SLOTS, SAMPLE_HAND } from "../systems/cardSystem";
+import { canDrop, SAMPLE_HAND, getCardsById } from "../systems/cardSystem";
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
@@ -50,57 +50,128 @@ function StatBar({ label, value, max, color }) {
     );
 }
 
+// ── Population system ─────────────────────────────────────────────────────────
 /**
- * A single equipment slot acting as a drop zone.
- * Accepts only cards whose tags match EQUIPMENT_SLOTS[slotKey].accepts.
- * Starts as "empty"; changes when a valid card is equipped (dragged here).
+ * Registry of all population types.
+ * To add a new type, append an entry here — no other code needs changing.
+ *   id            — unique key, must match keys in the population state object
+ *   label         — display name
+ *   icon          — React node (null = text placeholder until icon asset is ready)
+ *   socialClasses — ordered list of { id, label, color } segments for the bar
  */
-function EquipSlot({ slotKey, slotDef, equippedCard, onEquip }) {
-    const { isOver, accepts, dropProps } = useDropZone("equipment", slotKey, canDrop, onEquip);
+const POPULATION_TYPES = [
+    {
+        id: "zombie",
+        label: "Zombie",
+        icon: null, // replace with <img src={...} /> once icon asset is added
+        socialClasses: [
+            { id: "vulgar",  label: "Vulgar",  color: "#9e9e9e" },
+            { id: "noble",   label: "Noble",   color: "#7c3aed" },
+            { id: "soldier", label: "Soldier", color: "#dc143c" },
+        ],
+    },
+    {
+        id: "skeleton",
+        label: "Skeleton",
+        icon: null, // replace with <img src={...} /> once icon asset is added
+        socialClasses: [
+            { id: "vulgar",  label: "Vulgar",  color: "#9e9e9e" },
+            { id: "noble",   label: "Noble",   color: "#7c3aed" },
+            { id: "soldier", label: "Soldier", color: "#dc143c" },
+        ],
+    },
+    // Add more population types here, e.g.:
+    // { id: "human", label: "Human", icon: null, socialClasses: [...] },
+];
 
+function PopulationRow({ typeDef, counts, viewMode }) {
+    const total = typeDef.socialClasses.reduce((s, sc) => s + (counts[sc.id] ?? 0), 0);
     return (
-        <div
-            {...dropProps}
-            className={[
-                "card-base",
-                equippedCard ? `card-rarity-${equippedCard.rarity.toLowerCase()}` : "",
-                isOver && accepts ? "drop-zone-active" : "",
-                isOver && !accepts ? "drop-zone-reject" : "",
-            ].filter(Boolean).join(" ")}
-            style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.4rem 0.5rem",
-                background: "rgba(255,255,255,0.03)",
-                border: equippedCard ? undefined : "1px dashed rgba(255,255,255,0.1)",
-                borderRadius: "0.5rem",
-                minHeight: "2.6rem",
-                cursor: "crosshair",
-                transition: "all 0.2s",
-                userSelect: "none",
-            }}
-        >
-            {/* Miniature card art placeholder */}
-            <div style={{
-                width: 22, height: 30, borderRadius: "0.25rem", flexShrink: 0,
-                background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "0.4rem", color: "#5c6bc0",
-            }}>
-                {equippedCard ? "▣" : ""}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.3rem 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ width: 18, height: 18, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", opacity: 0.5 }}>
+                {typeDef.icon ?? "☠"}
             </div>
-            <div>
-                <span style={LABEL}>{slotDef.label}</span>
-                <span style={{ fontSize: "0.72rem", color: equippedCard ? "#e8eaf6" : "rgba(255,255,255,0.22)" }}>
-                    {equippedCard ? equippedCard.name : "empty"}
-                </span>
-            </div>
+            <span style={{ fontSize: "1rem", color: "#9fa8da", flexShrink: 0, minWidth: 44 }}>{typeDef.label}</span>
+            {viewMode === "total" ? (
+                <span style={{ fontSize: "1rem", color: "#e8eaf6", marginLeft: "auto" }}>{total}</span>
+            ) : (
+                <div style={{ flex: 1, display: "flex", height: 18, borderRadius: 3, overflow: "hidden", gap: 1 }}>
+                    {typeDef.socialClasses.map((sc) => {
+                        const count = counts[sc.id] ?? 0;
+                        if (count === 0) return null;
+                        const pct = (count / total) * 100;
+                        return (
+                            <div
+                                key={sc.id}
+                                title={`${sc.label}: ${count}`}
+                                style={{
+                                    width: `${pct}%`,
+                                    background: sc.color,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "1rem",
+                                    color: "#fff",
+                                    overflow: "hidden",
+                                    whiteSpace: "nowrap",
+                                    minWidth: 14,
+                                }}
+                            >
+                                {count}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
 
-// ── World Grid ────────────────────────────────────────────────────────────────
+function PopulationPanel({ population, popView, onSetPopView }) {
+    const grandTotal = POPULATION_TYPES.reduce((s, t) => {
+        const c = population[t.id] ?? {};
+        return s + Object.values(c).reduce((a, v) => a + v, 0);
+    }, 0);
+    return (
+        <>
+            <div style={{ marginBottom: "0.6rem" }}>
+                <div style={{ display: "flex", gap: "0.25rem" }}>
+                    {[
+                        { key: "total",  label: `Total  ${grandTotal}` },
+                        { key: "social", label: "Social status" },
+                    ].map(({ key, label }) => (
+                        <button
+                            key={key}
+                            onClick={() => onSetPopView(key)}
+                            style={{
+                                flex: 1,
+                                padding: "0.25rem 0",
+                                fontSize: "1rem",
+                                borderRadius: "0.35rem",
+                                border: popView === key ? "1px solid rgba(121,134,203,0.6)" : "1px solid rgba(255,255,255,0.08)",
+                                background: popView === key ? "rgba(63,81,181,0.18)" : "rgba(255,255,255,0.04)",
+                                color: popView === key ? "#c5cae9" : "#7986cb",
+                                cursor: "pointer",
+                            }}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            {POPULATION_TYPES.map((typeDef) => (
+                <PopulationRow
+                    key={typeDef.id}
+                    typeDef={typeDef}
+                    counts={population[typeDef.id] ?? {}}
+                    viewMode={popView}
+                />
+            ))}
+        </>
+    );
+}
+
+// ── World Grid ────────────────────────────────────────────────────────────────────────────────
 const TILE_SIZE = 64; // px per tile at zoom 1×
 const GRID_COLS = MAP_W;  // full 256-tile width
 const GRID_ROWS = MAP_H;  // full 256-tile height
@@ -220,9 +291,11 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
             setVpSize({ w, h });
             if (!initializedRef.current && w > 0 && h > 0) {
                 initializedRef.current = true;
+                const centerCol = Math.floor(MAP_W / 2);
+                const centerRow = Math.floor(MAP_H / 2);
                 const init = {
-                    x: Math.round((w - GRID_COLS * TILE_SIZE) / 2),
-                    y: Math.round((h - GRID_ROWS * TILE_SIZE) / 2),
+                    x: Math.round(w / 2 - (centerCol + 0.5) * TILE_SIZE),
+                    y: Math.round(h / 2 - (centerRow + 0.5) * TILE_SIZE),
                     zoom: 1.0,
                 };
                 setCam(init);
@@ -276,13 +349,15 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
 
     const onPointerUp = () => { panRef.current = null; setIsPanning(false); };
 
-    // Middle mouse → reset camera
+    // Middle mouse → re-center camera on the Center of the World tile
     const onMouseDown = (e) => {
         if (e.button !== 1) return;
-        e.preventDefault(); // prevent browser auto-scroll
+        e.preventDefault();
+        const centerCol = Math.floor(MAP_W / 2);
+        const centerRow = Math.floor(MAP_H / 2);
         const next = {
-            x: Math.round((vpSize.w - GRID_COLS * TILE_SIZE) / 2),
-            y: Math.round((vpSize.h - GRID_ROWS * TILE_SIZE) / 2),
+            x: Math.round(vpSize.w / 2 - (centerCol + 0.5) * TILE_SIZE),
+            y: Math.round(vpSize.h / 2 - (centerRow + 0.5) * TILE_SIZE),
             zoom: 1.0,
         };
         camRef.current = next;
@@ -339,13 +414,21 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
 // ── Inner game content (must be a child of DragProvider) ─────────────────────
 function GameScreenContent({ onMenu, startData }) {
     const [hand, setHand] = useState(SAMPLE_HAND);
-    const [equipment, setEquipment] = useState(
-        Object.fromEntries(Object.keys(EQUIPMENT_SLOTS).map((k) => [k, null]))
-    );
-    const [worldGrid, setWorldGrid] = useState({});
+    const [worldGrid, setWorldGrid] = useState(() => {
+        const centerRow = Math.floor(MAP_H / 2);
+        const centerCol = Math.floor(MAP_W / 2);
+        const [centerCard] = getCardsById("0");
+        if (!centerCard) return {};
+        return { [`${centerRow}-${centerCol}`]: centerCard };
+    });
     const [worldMap, setWorldMap] = useState(() =>
         startData?.savedMap ? mapFromString(startData.savedMap) : generateMap(Date.now())
     );
+    const [population, setPopulation] = useState({
+        zombie:   { vulgar: 47, noble: 8, soldier: 15 },
+        skeleton: { vulgar: 30, noble: 4, soldier: 6 },
+    });
+    const [popView, setPopView] = useState("total"); // "total" | "social"
     const loadFileRef = useRef(null);
 
     const handleSave = useCallback(() => {
@@ -375,11 +458,6 @@ function GameScreenContent({ onMenu, startData }) {
     const removeFromHand = useCallback((cardId) => {
         setHand((prev) => prev.filter((c) => c.id !== cardId));
     }, []);
-
-    const handleEquip = useCallback((slotKey) => (card) => {
-        setEquipment((prev) => ({ ...prev, [slotKey]: card }));
-        removeFromHand(card.id);
-    }, [removeFromHand]);
 
     const handleWorldDrop = useCallback((cellKey) => (card) => {
         setWorldGrid((prev) => ({ ...prev, [cellKey]: card }));
@@ -463,21 +541,13 @@ function GameScreenContent({ onMenu, startData }) {
                 {/* World Grid */}
                 <WorldGrid worldGrid={worldGrid} onWorldDrop={handleWorldDrop} worldMap={worldMap} />
 
-                {/* Right Panel — Equipment only */}
-                <aside className="flex flex-col shrink-0" style={{ width: 180, ...PANEL, padding: "0.85rem", overflowY: "auto" }}>
-                    <PanelSection title="Equipment">
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                            {Object.entries(EQUIPMENT_SLOTS).map(([key, def]) => (
-                                <EquipSlot
-                                    key={key}
-                                    slotKey={key}
-                                    slotDef={def}
-                                    equippedCard={equipment[key]}
-                                    onEquip={handleEquip(key)}
-                                />
-                            ))}
-                        </div>
-                    </PanelSection>
+                {/* Right Panel — Population */}
+                <aside className="flex flex-col shrink-0" style={{ width: 350, ...PANEL, padding: "0.85rem", overflowY: "auto" }}>
+                    <PopulationPanel
+                        population={population}
+                        popView={popView}
+                        onSetPopView={setPopView}
+                    />
                 </aside>
             </main>
 

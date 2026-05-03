@@ -16,13 +16,13 @@
 
 // ── Map dimensions ─────────────────────────────────────────────────────────────
 
-export const MAP_W = 256;
-export const MAP_H = 256;
-export const BLOCK_SIZE = 8; // tiles per block edge
-export const BLOCKS_X = MAP_W / BLOCK_SIZE; // 32
-export const BLOCKS_Y = MAP_H / BLOCK_SIZE; // 32
-export const NUM_BLOCKS = BLOCKS_X * BLOCKS_Y; // 1 024
-export const MAP_SIZE = MAP_W * MAP_H; // 65 536
+export const MAP_W = 231;
+export const MAP_H = 231;
+export const BLOCK_SIZE = 7; // tiles per block edge
+export const BLOCKS_X = MAP_W / BLOCK_SIZE; // 33
+export const BLOCKS_Y = MAP_H / BLOCK_SIZE; // 33
+export const NUM_BLOCKS = BLOCKS_X * BLOCKS_Y; // 1 089
+export const MAP_SIZE = MAP_W * MAP_H; // 53 361
 
 // ── Area-type configuration ────────────────────────────────────────────────────
 

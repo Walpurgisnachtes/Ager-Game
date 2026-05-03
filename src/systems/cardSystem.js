@@ -25,19 +25,6 @@ function resolveArt(path) {
 export const RARITIES = ["Common", "Rare", "Epic", "Legendary"];
 
 /**
- * Equipment slot definitions.
- * key    → slot id used throughout the codebase
- * label  → display name shown in the UI
- * accepts → array of card tags that can be dropped here
- */
-export const EQUIPMENT_SLOTS = {
-  head: { label: "Head", accepts: ["equipment-head"] },
-  body: { label: "Body", accepts: ["equipment-body"] },
-  feet: { label: "Feet", accepts: ["equipment-feet"] },
-  hand: { label: "Hand", accepts: ["equipment-hand", "tool"] },
-};
-
-/**
  * Tags that any world grid cell will accept.
  * Extend this list as new card types are added.
  */
@@ -47,27 +34,22 @@ export const WORLD_GRID_ACCEPTS = [
   "consumable",
   "tool",
   "structure",
+  "plant",
 ];
 
 /**
  * Process system — the single source of truth for drop legality.
  * Returns true if `card` may be dropped onto a zone.
  *
- * @param {Object}           card      — card object
- * @param {"equipment"|"world"} zoneType — category of the drop target
- * @param {string}           [slotKey] — slot id (required for "equipment" zones)
+ * @param {Object} card     — card object
+ * @param {string} zoneType — category of the drop target ("world", etc.)
  */
-export function canDrop(card, zoneType, slotKey) {
+export function canDrop(card, zoneType) {
   if (!card?.tags?.length) return false;
 
-  if (zoneType === "equipment") {
-    const slot = EQUIPMENT_SLOTS[slotKey];
-    if (!slot) return false;
-    return card.tags.some((t) => slot.accepts.includes(t));
-  }
-
   if (zoneType === "world") {
-    return card.tags.some((t) => WORLD_GRID_ACCEPTS.includes(t));
+    return true; // TEMP: allow all cards to be dropped on the world for testing
+    // return card.tags.some((t) => WORLD_GRID_ACCEPTS.includes(t));
   }
 
   return false;
@@ -81,12 +63,13 @@ export function createCard({
   id,
   name,
   rarity = "Common",
+  type = "Unknown",
   tags = [], // e.g. ["equipment-head"], ["seed", "item"]
   description = "",
   art = null,      // image shown on the hand card
   worldArt = null, // image shown when placed on the world grid (falls back to art)
 } = {}) {
-  return { id, name, rarity, tags, description, art, worldArt };
+  return { id, name, rarity, type, tags, description, art, worldArt };
 }
 
 // ── Card registry ─────────────────────────────────────────────────────────────
@@ -109,4 +92,4 @@ export function getCardsById(...ids) {
 }
 
 // ── Sample hand for development ──────────────────────────────────────────────
-export const SAMPLE_HAND = getCardsById("c1", "c2", "c3", "c4", "c5");
+export const SAMPLE_HAND = getCardsById("1", "2", "3", "4", "5");
