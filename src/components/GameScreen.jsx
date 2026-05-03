@@ -129,15 +129,12 @@ function WorldCell({ cellKey, cellCard, onDrop }) {
             }}
             title={cellCard ? `${cellCard.name} [${cellCard.rarity}]` : ""}
         >
-            {cellCard && cellCard.art ? (
+            {cellCard && (cellCard.worldArt ?? cellCard.art) ? (
                 <img
-                    src={cellCard.art}
+                    src={cellCard.worldArt ?? cellCard.art}
                     alt={cellCard.name}
                     style={{
-                        width: "80%",
-                        height: "80%",
                         objectFit: "contain",
-                        imageRendering: "pixelated",
                     }}
                     draggable={false}
                 />

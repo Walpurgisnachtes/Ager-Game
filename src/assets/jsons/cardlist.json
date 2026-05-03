@@ -1,0 +1,39 @@
+[
+  {
+    "id": "c1",
+    "name": "Straw Hat",
+    "rarity": "Common",
+    "tags": ["equipment-head"],
+    "description": "A simple woven hat."
+  },
+  {
+    "id": "c2",
+    "name": "Night Wheat Seed",
+    "rarity": "Common",
+    "tags": ["seed", "item"],
+    "description": "Plant in tilled soil at night.",
+    "art": "card_arts/night_wheat_seed.png",
+    "worldArt": "world_icons/night_wheat.png"
+  },
+  {
+    "id": "c3",
+    "name": "Iron Hoe",
+    "rarity": "Rare",
+    "tags": ["tool", "equipment-hand"],
+    "description": "Tills the soil efficiently."
+  },
+  {
+    "id": "c4",
+    "name": "Moon Cloak",
+    "rarity": "Epic",
+    "tags": ["equipment-body"],
+    "description": "Woven from solidified moonlight."
+  },
+  {
+    "id": "c5",
+    "name": "Night Boots",
+    "rarity": "Legendary",
+    "tags": ["equipment-feet"],
+    "description": "Silent as the abyss."
+  }
+]

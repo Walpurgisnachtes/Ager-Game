@@ -2,7 +2,24 @@
 //  Card System — data structures, tags, and drop process rules
 // ─────────────────────────────────────────────
 
-import nightWheatImg from "../assets/images/night_wheat.png";
+import cardListData from "../assets/jsons/cardlist.json";
+
+// ── Image resolution ──────────────────────────────────────────────────────────
+// Vite eagerly imports all images from the two asset subdirectories.
+// The resulting map is keyed by "subdir/filename.png" to match JSON path values.
+const _cardArtsGlob   = import.meta.glob("../assets/images/card_arts/*.png",   { eager: true });
+const _worldIconsGlob = import.meta.glob("../assets/images/world_icons/*.png", { eager: true });
+
+const _IMAGE_MAP = Object.fromEntries(
+  [...Object.entries(_cardArtsGlob), ...Object.entries(_worldIconsGlob)].map(
+    ([path, mod]) => [path.replace("../assets/images/", ""), mod.default]
+  )
+);
+
+/** Resolve a JSON art path string (e.g. "card_arts/foo.png") to a bundled URL. */
+function resolveArt(path) {
+  return path ? (_IMAGE_MAP[path] ?? null) : null;
+}
 
 /** All rarity levels, lowest to highest */
 export const RARITIES = ["Common", "Rare", "Epic", "Legendary"];
@@ -66,47 +83,30 @@ export function createCard({
   rarity = "Common",
   tags = [], // e.g. ["equipment-head"], ["seed", "item"]
   description = "",
-  art = null, // reserved for future image/component
+  art = null,      // image shown on the hand card
+  worldArt = null, // image shown when placed on the world grid (falls back to art)
 } = {}) {
-  return { id, name, rarity, tags, description, art };
+  return { id, name, rarity, tags, description, art, worldArt };
+}
+
+// ── Card registry ─────────────────────────────────────────────────────────────
+
+/**
+ * All cards loaded from cardlist.json, with art paths resolved to bundled URLs.
+ * Use this as the single source of truth for card data.
+ */
+export const ALL_CARDS = cardListData.map((entry) =>
+  createCard({
+    ...entry,
+    art:      resolveArt(entry.art),
+    worldArt: resolveArt(entry.worldArt),
+  })
+);
+
+/** Look up one or more cards by id. Unknown ids are silently skipped. */
+export function getCardsById(...ids) {
+  return ids.map((id) => ALL_CARDS.find((c) => c.id === id)).filter(Boolean);
 }
 
 // ── Sample hand for development ──────────────────────────────────────────────
-export const SAMPLE_HAND = [
-  createCard({
-    id: "c1",
-    name: "Straw Hat",
-    rarity: "Common",
-    tags: ["equipment-head"],
-    description: "A simple woven hat.",
-  }),
-  createCard({
-    id: "c2",
-    name: "Night Wheat Seed",
-    rarity: "Common",
-    tags: ["seed", "item"],
-    description: "Plant in tilled soil at night.",
-    art: nightWheatImg,
-  }),
-  createCard({
-    id: "c3",
-    name: "Iron Hoe",
-    rarity: "Rare",
-    tags: ["tool", "equipment-hand"],
-    description: "Tills the soil efficiently.",
-  }),
-  createCard({
-    id: "c4",
-    name: "Moon Cloak",
-    rarity: "Epic",
-    tags: ["equipment-body"],
-    description: "Woven from solidified moonlight.",
-  }),
-  createCard({
-    id: "c5",
-    name: "Night Boots",
-    rarity: "Legendary",
-    tags: ["equipment-feet"],
-    description: "Silent as the abyss.",
-  }),
-];
+export const SAMPLE_HAND = getCardsById("c1", "c2", "c3", "c4", "c5");
