@@ -26,6 +26,7 @@ import {
 } from "../systems/cardSystem";
 import { initResidentSystem } from "../systems/game_logic/residentSystem";
 import { initDaySystem } from "../systems/game_logic/daySystem";
+import { initResourceSystem } from "../systems/game_logic/resourceSystem";
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
@@ -60,44 +61,15 @@ function PanelSection({ title, children }) {
   );
 }
 
-function StatBar({ label, value, max, color }) {
-  return (
-    <div style={{ marginBottom: "0.5rem" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          fontSize: "0.68rem",
-          color: "#9fa8da",
-          marginBottom: "0.2rem",
-        }}
-      >
-        <span>{label}</span>
-        <span>
-          {value}/{max}
-        </span>
-      </div>
-      <div
-        style={{
-          height: 5,
-          borderRadius: 99,
-          background: "rgba(255,255,255,0.08)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: "100%",
-            width: `${(value / max) * 100}%`,
-            background: color,
-            borderRadius: 99,
-            transition: "width 0.4s",
-          }}
-        />
-      </div>
-    </div>
-  );
-}
+// ── Resource definitions ──────────────────────────────────────────────────────
+// Add new resource types here. formatValue controls the display unit.
+//   coin  → "{n}g"   (unique unit)
+//   all others → "{n}"
+const RESOURCE_DEFINITIONS = [
+  { id: "coin",  label: "Coin",  formatValue: (n) => `${n}g` },
+  { id: "wood",  label: "Wood",  formatValue: (n) => `${n}` },
+  { id: "stone", label: "Stone", formatValue: (n) => `${n}` },
+];
 
 // ── Population system ─────────────────────────────────────────────────────────
 /**
@@ -975,6 +947,13 @@ function GameScreenContent({ onMenu, startData }) {
   const [population, setPopulation] = useState({});
   const [popView, setPopView] = useState("total"); // "total" | "social"
   const [day, setDay] = useState(0);
+  // Resources — driven by resourceSystem; only unlocked entries are shown.
+  const [resources, setResources] = useState({
+    coin:  { amount: 0, unlocked: true  },
+    wood:  { amount: 0, unlocked: false },
+    stone: { amount: 0, unlocked: false },
+  });
+  const resourceSysRef = useRef(null);
   const loadFileRef = useRef(null);
 
   // ── Day + Resident systems ────────────────────────────────────────────────
@@ -1005,14 +984,26 @@ function GameScreenContent({ onMenu, startData }) {
     const onUpdate = (e) => setPopulation(e.detail.population);
     window.addEventListener("residents:updated", onUpdate);
 
+    // Resource system — initialized with the same seed as the resources state.
+    const resSys = initResourceSystem({
+      coin:  { amount: 0, unlocked: true  },
+      wood:  { amount: 0, unlocked: false },
+      stone: { amount: 0, unlocked: false },
+    });
+    resourceSysRef.current = resSys;
+    const onResourceUpdate = (e) => setResources(e.detail.resources);
+    window.addEventListener("resources:updated", onResourceUpdate);
+
     // Advance from day 0 to day 1 — fires "day:advance" synchronously,
     // which both systems handle before this line returns.
     daySys.advanceDay();
 
     return () => {
       sys.destroy();
+      resSys.destroy();
       window.removeEventListener("residents:updated", onUpdate);
       window.removeEventListener("day:advance", onDayTick);
+      window.removeEventListener("resources:updated", onResourceUpdate);
     };
   }, []); // eslint-disable-line
 
@@ -1172,79 +1163,27 @@ function GameScreenContent({ onMenu, startData }) {
             overflowY: "auto",
           }}
         >
-          <PanelSection title="Player">
-            <div className="flex items-center gap-2">
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: "50%",
-                  background: "rgba(63,81,181,0.25)",
-                  border: "1px solid rgba(63,81,181,0.4)",
-                  flexShrink: 0,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: "0.85rem",
-                  fontWeight: 600,
-                  color: "#c5cae9",
-                }}
-              >
-                Farmer
-              </span>
-            </div>
-          </PanelSection>
-          <PanelSection title="Stats">
-            <StatBar
-              label="Energy"
-              value={80}
-              max={100}
-              color="linear-gradient(90deg,#42a5f5,#1e88e5)"
-            />
-            <StatBar
-              label="Health"
-              value={95}
-              max={100}
-              color="linear-gradient(90deg,#66bb6a,#43a047)"
-            />
-            <StatBar
-              label="Hunger"
-              value={60}
-              max={100}
-              color="linear-gradient(90deg,#ffa726,#fb8c00)"
-            />
-          </PanelSection>
-          <PanelSection title="Time">
-            <p
-              style={{ fontSize: "0.82rem", fontWeight: 600, color: "#e8eaf6" }}
-            >
-              Night · Day {day}
-            </p>
-            <p style={{ ...LABEL, marginTop: "0.2rem", marginBottom: 0 }}>
-              Spring · Year 1
-            </p>
-          </PanelSection>
           <PanelSection title="Resources">
-            {[
-              ["Gold", "0 g"],
-              ["Wood", "0"],
-              ["Stone", "0"],
-            ].map(([k, v]) => (
-              <div
-                key={k}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "0.72rem",
-                  color: "#9fa8da",
-                  marginBottom: "0.3rem",
-                }}
-              >
-                <span>{k}</span>
-                <span style={{ color: "#e8eaf6" }}>{v}</span>
-              </div>
-            ))}
+            {RESOURCE_DEFINITIONS.filter(({ id }) => resources[id]?.unlocked).map(
+              ({ id, label, formatValue }) => (
+                <div
+                  key={id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "1rem",
+                    color: "#9fa8da",
+                    padding: "0.3rem 0",
+                    borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  }}
+                >
+                  <span>{label}</span>
+                  <span style={{ color: "#e8eaf6" }}>
+                    {formatValue(resources[id].amount)}
+                  </span>
+                </div>
+              ),
+            )}
           </PanelSection>
         </aside>
 
