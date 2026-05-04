@@ -10,6 +10,7 @@ import { generateMap, toString as mapToString, fromString as mapFromString, MAP_
 const _terrainIconsGlob = import.meta.glob("../assets/images/world_icons/*.png", { eager: true });
 import { DragProvider, useDragContext } from "../systems/dragSystem";
 import { canDrop, SAMPLE_HAND, getCardsById, ALL_CARDS } from "../systems/cardSystem";
+import { initResidentSystem } from "../systems/game_logic/residentSystem";
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
@@ -768,12 +769,40 @@ function GameScreenContent({ onMenu, startData }) {
     const [worldMap, setWorldMap] = useState(() =>
         startData?.savedMap ? mapFromString(startData.savedMap) : generateMap(Date.now())
     );
-    const [population, setPopulation] = useState({
-        zombie:   { vulgar: 47, noble: 8, soldier: 15 },
-        skeleton: { vulgar: 30, noble: 4, soldier: 6 },
-    });
+    const [population, setPopulation] = useState({});
     const [popView, setPopView] = useState("total"); // "total" | "social"
     const loadFileRef = useRef(null);
+
+    // ── Resident system ───────────────────────────────────────────────────────
+    // Keep a ref to the latest worldGrid so the resident system closure never
+    // reads stale data across renders.
+    const worldGridResRef = useRef(worldGrid);
+    const residentSysRef  = useRef(null);
+
+    useEffect(() => { worldGridResRef.current = worldGrid; }, [worldGrid]);
+
+    // Initialize the resident system once on mount; clean up on unmount.
+    useEffect(() => {
+        const sys = initResidentSystem(() => worldGridResRef.current);
+        residentSysRef.current = sys;
+        setPopulation(sys.getPopulation());
+
+        const onUpdate = (e) => setPopulation(e.detail.population);
+        window.addEventListener("residents:updated", onUpdate);
+
+        return () => {
+            sys.destroy();
+            window.removeEventListener("residents:updated", onUpdate);
+        };
+    }, []); // eslint-disable-line
+
+    // Re-sync whenever a card is placed / removed (worldGrid changes).
+    useEffect(() => {
+        const sys = residentSysRef.current;
+        if (!sys) return;
+        sys.syncWithWorld();
+        setPopulation(sys.getPopulation());
+    }, [worldGrid]);
 
     const handleSave = useCallback(() => {
         const content = mapToString(worldMap);

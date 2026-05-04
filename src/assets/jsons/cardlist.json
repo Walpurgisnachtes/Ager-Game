@@ -9,6 +9,15 @@
       "invincible",
       "not-in-deck"
     ],
+    "residentProvided": {
+      "type": "Zombie",
+      "initialResidents": {
+        "amount": 1,
+        "socialStatus": "vulgar"
+      },
+      "maxResidents": 99999999,
+      "dayPerResidentIncrement": 10
+    },
     "description": "Center of the world.",
     "worldArt": "world_icons/player_base.png"
   },
@@ -22,6 +31,10 @@
       "weak-fire"
     ],
     "daysPerOutput": 4,
+    "residentRequired": {
+      "name": "Zombie",
+      "amount": 1
+    },
     "recipes": [
       {
         "input": [],
@@ -104,8 +117,15 @@
       "weak-fire",
       "residential"
     ],
-    "residentType": "Zombie",
-    "residentLimit": 10,
+    "residentProvided": {
+      "type": "Zombie",
+      "initialResidents":  {
+        "amount": 1,
+        "socialStatus": "vulgar"
+      },
+      "maxResidents": 10,
+      "dayPerResidentIncrement": 2
+    },
     "description": "Woven from solidified moonlight.",
     "art": "card_arts/zombie_house.png",
     "worldArt": "world_icons/zombie_house.png"
@@ -119,8 +139,15 @@
       "weak-fire",
       "residential"
     ],
-    "residentType": "Skeleton",
-    "residentLimit": 10,
+    "residentProvided": {
+      "type": "Skeleton",
+      "initialResidents":  {
+        "amount": 1,
+        "socialStatus": "vulgar"
+      },
+      "maxResidents": 10,
+      "dayPerResidentIncrement": 2
+    },
     "description": "Woven from solidified moonlight.",
     "art": "card_arts/skeleton_house.png",
     "worldArt": "world_icons/skeleton_house.png"
