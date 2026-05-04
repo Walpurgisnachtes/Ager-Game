@@ -955,8 +955,8 @@ function GameScreenContent({ onMenu, startData }) {
   const [day, setDay] = useState(0);
   // Resources — driven by resourceSystem; only unlocked entries are shown.
   const [resources, setResources] = useState({
-    coin:  { amount: 0, unlocked: true  },
-    wood:  { amount: 0, unlocked: false },
+    coin: { amount: 0, unlocked: true },
+    wood: { amount: 0, unlocked: false },
     stone: { amount: 0, unlocked: false },
   });
   const resourceSysRef = useRef(null);
@@ -993,8 +993,8 @@ function GameScreenContent({ onMenu, startData }) {
 
     // Resource system — initialized with the same seed as the resources state.
     const resSys = initResourceSystem({
-      coin:  { amount: 0, unlocked: true  },
-      wood:  { amount: 0, unlocked: false },
+      coin: { amount: 0, unlocked: true },
+      wood: { amount: 0, unlocked: false },
       stone: { amount: 0, unlocked: false },
     });
     resourceSysRef.current = resSys;
@@ -1006,6 +1006,7 @@ function GameScreenContent({ onMenu, startData }) {
     const rss = initResourceStructureSystem(
       () => worldGridResRef.current,
       () => resourceSysRef.current,
+      () => computeTerritorySet(worldGridResRef.current),
     );
     resourceStructureSysRef.current = rss;
 

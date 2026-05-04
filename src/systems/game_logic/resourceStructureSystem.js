@@ -32,11 +32,12 @@ export function normalizeResourceId(name) {
 /**
  * Creates a resource structure system instance.
  *
- * @param {Function} getWorldGrid   — () => current world grid
- * @param {Function} getResourceSys — () => current resource system instance
+ * @param {Function} getWorldGrid    — () => current world grid
+ * @param {Function} getResourceSys  — () => current resource system instance
+ * @param {Function} getTerritorySet — () => Set<tileKey> of tiles inside territory
  * @returns {{ syncWithWorld, destroy }}
  */
-export function initResourceStructureSystem(getWorldGrid, getResourceSys) {
+export function initResourceStructureSystem(getWorldGrid, getResourceSys, getTerritorySet) {
     // { tileKey: number } — days accumulated toward the next production cycle
     const dayAccumulators = {};
 
@@ -69,12 +70,16 @@ export function initResourceStructureSystem(getWorldGrid, getResourceSys) {
     function onDayAdvance() {
         syncWithWorld();
 
-        const wGrid  = getWorldGrid();
-        const resSys = getResourceSys();
+        const wGrid     = getWorldGrid();
+        const resSys    = getResourceSys();
+        const territory = getTerritorySet ? getTerritorySet() : null;
         if (!resSys) return;
 
         for (const [key, card] of Object.entries(wGrid)) {
             if (!card.recipes?.length || !(key in dayAccumulators)) continue;
+
+            // Structures outside territory are inert — neither accumulate nor produce.
+            if (territory && !territory.has(key)) continue;
 
             // MVP: always use the first recipe.
             const recipe = card.recipes[0];
