@@ -4,6 +4,23 @@
 
 import cardListData from "../assets/jsons/cardlist.json";
 
+// ── Configurable constants ────────────────────────────────────────────────────
+/** All rarity levels, lowest to highest */
+export const RARITIES = ["Common", "Rare", "Epic", "Legendary"];
+
+/**
+ * Tags that any world grid cell will accept.
+ * Extend this list as new card types are added.
+ */
+export const WORLD_GRID_ACCEPTS = [
+  "item",
+  "seed",
+  "consumable",
+  "tool",
+  "structure",
+  "plant",
+];
+
 // ── Image resolution ──────────────────────────────────────────────────────────
 // Vite eagerly imports all images from the two asset subdirectories.
 // The resulting map is keyed by "subdir/filename.png" to match JSON path values.
@@ -20,22 +37,6 @@ const _IMAGE_MAP = Object.fromEntries(
 function resolveArt(path) {
   return path ? (_IMAGE_MAP[path] ?? null) : null;
 }
-
-/** All rarity levels, lowest to highest */
-export const RARITIES = ["Common", "Rare", "Epic", "Legendary"];
-
-/**
- * Tags that any world grid cell will accept.
- * Extend this list as new card types are added.
- */
-export const WORLD_GRID_ACCEPTS = [
-  "item",
-  "seed",
-  "consumable",
-  "tool",
-  "structure",
-  "plant",
-];
 
 /**
  * Process system — the single source of truth for drop legality.

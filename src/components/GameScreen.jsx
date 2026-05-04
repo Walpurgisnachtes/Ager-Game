@@ -13,6 +13,13 @@ import { canDrop, SAMPLE_HAND, getCardsById, ALL_CARDS } from "../systems/cardSy
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
+// ── Configurable constants ────────────────────────────────────────────────────
+const TILE_SIZE = 64;        // px per tile at zoom 1×
+const LINK_DISTANCE = 5;     // Manhattan radius for structure linking / territory
+const VISIBILITY_RADIUS = 8; // Manhattan radius for war fog per structure
+const GRID_COLS = MAP_W;     // alias — full map width in tiles
+const GRID_ROWS = MAP_H;     // alias — full map height in tiles
+
 const PANEL = {
     background: "rgba(255,255,255,0.03)",
     border: "1px solid rgba(255,255,255,0.08)",
@@ -172,10 +179,6 @@ function PopulationPanel({ population, popView, onSetPopView }) {
 }
 
 // ── World Grid ────────────────────────────────────────────────────────────────────────────────
-const TILE_SIZE = 64; // px per tile at zoom 1×
-const GRID_COLS = MAP_W;  // full 256-tile width
-const GRID_ROWS = MAP_H;  // full 256-tile height
-
 const TERRAIN_ICONS = Object.fromEntries(
     Object.entries(_terrainIconsGlob).map(([path, mod]) => [
         path.replace(/^.*\/([^/]+)\.png$/, "$1"),
@@ -221,12 +224,6 @@ function resolveTerrainImg(terrainTile, cellKey) {
     }
     return TERRAIN_IMGS[terrainTile] ?? null;
 }
-
-// ── Linking configuration ────────────────────────────────────────────────────
-/** Manhattan distance within which structures are considered linked. */
-const LINK_DISTANCE = 5;
-/** Manhattan radius at which each structure reveals the map (war fog). */
-const VISIBILITY_RADIUS = 8;
 
 /**
  * Given a worldGrid and a source tile key, returns the Set of keys of all
