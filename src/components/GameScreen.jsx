@@ -25,6 +25,7 @@ import {
   ALL_CARDS,
 } from "../systems/cardSystem";
 import { initResidentSystem } from "../systems/game_logic/residentSystem";
+import { initDaySystem } from "../systems/game_logic/daySystem";
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
@@ -973,30 +974,45 @@ function GameScreenContent({ onMenu, startData }) {
   );
   const [population, setPopulation] = useState({});
   const [popView, setPopView] = useState("total"); // "total" | "social"
+  const [day, setDay] = useState(0);
   const loadFileRef = useRef(null);
 
-  // ── Resident system ───────────────────────────────────────────────────────
+  // ── Day + Resident systems ────────────────────────────────────────────────
   // Keep a ref to the latest worldGrid so the resident system closure never
   // reads stale data across renders.
   const worldGridResRef = useRef(worldGrid);
   const residentSysRef = useRef(null);
+  const daySysRef = useRef(null);
 
   useEffect(() => {
     worldGridResRef.current = worldGrid;
   }, [worldGrid]);
 
-  // Initialize the resident system once on mount; clean up on unmount.
+  // Initialize both systems once on mount; advance from day 0 → 1 immediately
+  // so the game starts on day 1 with all initial residents already in place.
   useEffect(() => {
+    // Day system — starts at 0; listener updates the day display.
+    const daySys = initDaySystem(0);
+    daySysRef.current = daySys;
+    const onDayTick = (e) => setDay(e.detail.day);
+    window.addEventListener("day:advance", onDayTick);
+
+    // Resident system — must be initialized before the first advanceDay call
+    // so it can process the "day:advance" event.
     const sys = initResidentSystem(() => worldGridResRef.current);
     residentSysRef.current = sys;
-    setPopulation(sys.getPopulation());
 
     const onUpdate = (e) => setPopulation(e.detail.population);
     window.addEventListener("residents:updated", onUpdate);
 
+    // Advance from day 0 to day 1 — fires "day:advance" synchronously,
+    // which both systems handle before this line returns.
+    daySys.advanceDay();
+
     return () => {
       sys.destroy();
       window.removeEventListener("residents:updated", onUpdate);
+      window.removeEventListener("day:advance", onDayTick);
     };
   }, []); // eslint-disable-line
 
@@ -1150,7 +1166,7 @@ function GameScreenContent({ onMenu, startData }) {
         <aside
           className="flex flex-col shrink-0"
           style={{
-            width: 180,
+            width: 350,
             ...PANEL,
             padding: "0.85rem",
             overflowY: "auto",
@@ -1203,7 +1219,7 @@ function GameScreenContent({ onMenu, startData }) {
             <p
               style={{ fontSize: "0.82rem", fontWeight: 600, color: "#e8eaf6" }}
             >
-              Night · Day 1
+              Night · Day {day}
             </p>
             <p style={{ ...LABEL, marginTop: "0.2rem", marginBottom: 0 }}>
               Spring · Year 1
