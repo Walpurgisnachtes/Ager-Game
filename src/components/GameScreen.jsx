@@ -282,6 +282,28 @@ function getIndirectLinkedKeys(worldGrid, sourceKey, linkDistance = LINK_DISTANC
 }
 
 /**
+ * Returns the Set of tile keys that form the territory.
+ * Only structures tagged "center_of_the_world" or "residential" expand territory.
+ */
+function computeTerritorySet(wGrid) {
+    const terr = new Set();
+    for (const [srcKey, srcCard] of Object.entries(wGrid)) {
+        if (srcCard.type !== "structure") continue;
+        const tags = srcCard.tags ?? [];
+        if (!tags.includes("center_of_the_world") && !tags.includes("residential")) continue;
+        const [sr, sc] = srcKey.split("-").map(Number);
+        for (let dr = -LINK_DISTANCE; dr <= LINK_DISTANCE; dr++) {
+            const remain = LINK_DISTANCE - Math.abs(dr);
+            for (let dc = -remain; dc <= remain; dc++) {
+                const r = sr + dr, c = sc + dc;
+                if (r >= 0 && r < MAP_H && c >= 0 && c < MAP_W) terr.add(`${r}-${c}`);
+            }
+        }
+    }
+    return terr;
+}
+
+/**
  * Returns the Set of tile keys visible from any placed structure
  * (Manhattan radius ≤ VISIBILITY_RADIUS).
  */
@@ -399,24 +421,8 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
                 : getLinkedKeys(wGrid, `${sel.row}-${sel.col}`))
             : new Set();
 
-        // Pre-compute territory: union of every structure's Manhattan-LINK_DISTANCE diamond
-        const territoryKeys = new Set();
-        if (territoryVisibleRef.current) {
-            for (const [srcKey, srcCard] of Object.entries(wGrid)) {
-                if (srcCard.type !== "structure") continue;
-                if (srcCard.tags?.includes("unlinkable")) continue;
-                const [sr, sc] = srcKey.split("-").map(Number);
-                for (let dr = -LINK_DISTANCE; dr <= LINK_DISTANCE; dr++) {
-                    const remain = LINK_DISTANCE - Math.abs(dr);
-                    for (let dc = -remain; dc <= remain; dc++) {
-                        const r = sr + dr, c = sc + dc;
-                        if (r >= 0 && r < MAP_H && c >= 0 && c < MAP_W) {
-                            territoryKeys.add(`${r}-${c}`);
-                        }
-                    }
-                }
-            }
-        }
+        // Pre-compute territory (always, for placement logic; visual toggle only hides rendering)
+        const territoryKeys = computeTerritorySet(wGrid);
 
         const visibilityKeys = computeVisibilitySet(wGrid);
 
@@ -451,8 +457,8 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
                     ctx.drawImage(terrainImg, px + pad, py + pad, tw - pad * 2, tw - pad * 2);
                 }
 
-                // Territory highlight — orange tint + outer-edge-only border
-                if (territoryKeys.has(key)) {
+                // Territory highlight — orange tint + outer-edge-only border (hidden when toggled off)
+                if (territoryVisibleRef.current && territoryKeys.has(key)) {
                     // ctx.fillStyle = "rgba(255,140,0,0.13)";
                     // ctx.fillRect(px, py, tw, tw);
                     // Draw only the edges that face non-territory (no inner seams)
@@ -534,7 +540,8 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
 
                 // Drop-hover highlight (only while dragging a card)
                 if (card && hover && hover.row === row && hover.col === col) {
-                    const ok = canDrop(card, "world");
+                    const isStructure = card.type?.toLowerCase() === "structure";
+                    const ok = canDrop(card, "world") && (!isStructure || territoryKeys.has(key));
                     ctx.fillStyle = ok ? "rgba(67,160,71,0.3)" : "rgba(229,57,53,0.3)";
                     ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
                 }
@@ -716,9 +723,9 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         schedDraw();
         const card = draggingRef.current;
         if (!tile || !card || !canDrop(card, "world")) return;
-        // Structure cards can only be placed in unfogged (visible) areas
+        // Structure cards can only be placed inside territory
         if (card.type?.toLowerCase() === "structure") {
-            if (!computeVisibilitySet(worldGridRef.current).has(`${tile.row}-${tile.col}`)) return;
+            if (!computeTerritorySet(worldGridRef.current).has(`${tile.row}-${tile.col}`)) return;
         }
         onWorldDrop(`${tile.row}-${tile.col}`)(card);
     };
