@@ -27,6 +27,7 @@ import {
 import { initResidentSystem } from "../systems/game_logic/residentSystem";
 import { initDaySystem } from "../systems/game_logic/daySystem";
 import { initResourceSystem } from "../systems/game_logic/resourceSystem";
+import { initResourceStructureSystem } from "../systems/game_logic/resourceStructureSystem";
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
@@ -61,15 +62,20 @@ function PanelSection({ title, children }) {
   );
 }
 
-// ── Resource definitions ──────────────────────────────────────────────────────
-// Add new resource types here. formatValue controls the display unit.
-//   coin  → "{n}g"   (unique unit)
-//   all others → "{n}"
-const RESOURCE_DEFINITIONS = [
-  { id: "coin",  label: "Coin",  formatValue: (n) => `${n}g` },
-  { id: "wood",  label: "Wood",  formatValue: (n) => `${n}` },
-  { id: "stone", label: "Stone", formatValue: (n) => `${n}` },
-];
+// ── Resource helpers ─────────────────────────────────────────────────────────
+// IDs that use a custom unit suffix.  All others display the bare number.
+const RESOURCE_UNITS = { coin: "g" };
+
+/** Convert a resource ID to a display label: "night_wheat" → "Night Wheat" */
+function resourceLabel(id) {
+  return id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Format an amount with the correct unit for the given resource ID. */
+function formatResourceValue(id, amount) {
+  const unit = RESOURCE_UNITS[id] ?? "";
+  return `${amount}${unit}`;
+}
 
 // ── Population system ─────────────────────────────────────────────────────────
 /**
@@ -962,6 +968,7 @@ function GameScreenContent({ onMenu, startData }) {
   const worldGridResRef = useRef(worldGrid);
   const residentSysRef = useRef(null);
   const daySysRef = useRef(null);
+  const resourceStructureSysRef = useRef(null);
 
   useEffect(() => {
     worldGridResRef.current = worldGrid;
@@ -994,13 +1001,22 @@ function GameScreenContent({ onMenu, startData }) {
     const onResourceUpdate = (e) => setResources(e.detail.resources);
     window.addEventListener("resources:updated", onResourceUpdate);
 
+    // Resource structure system — must be initialized after the resource system
+    // and before the first advanceDay so day-1 production is captured.
+    const rss = initResourceStructureSystem(
+      () => worldGridResRef.current,
+      () => resourceSysRef.current,
+    );
+    resourceStructureSysRef.current = rss;
+
     // Advance from day 0 to day 1 — fires "day:advance" synchronously,
-    // which both systems handle before this line returns.
+    // which all systems handle before this line returns.
     daySys.advanceDay();
 
     return () => {
       sys.destroy();
       resSys.destroy();
+      rss.destroy();
       window.removeEventListener("residents:updated", onUpdate);
       window.removeEventListener("day:advance", onDayTick);
       window.removeEventListener("resources:updated", onResourceUpdate);
@@ -1013,6 +1029,7 @@ function GameScreenContent({ onMenu, startData }) {
     if (!sys) return;
     sys.syncWithWorld();
     setPopulation(sys.getPopulation());
+    resourceStructureSysRef.current?.syncWithWorld();
   }, [worldGrid]);
 
   const handleSave = useCallback(() => {
@@ -1164,8 +1181,9 @@ function GameScreenContent({ onMenu, startData }) {
           }}
         >
           <PanelSection title="Resources">
-            {RESOURCE_DEFINITIONS.filter(({ id }) => resources[id]?.unlocked).map(
-              ({ id, label, formatValue }) => (
+            {Object.entries(resources)
+              .filter(([, r]) => r.unlocked)
+              .map(([id, r]) => (
                 <div
                   key={id}
                   style={{
@@ -1177,13 +1195,12 @@ function GameScreenContent({ onMenu, startData }) {
                     borderBottom: "1px solid rgba(255,255,255,0.05)",
                   }}
                 >
-                  <span>{label}</span>
+                  <span>{resourceLabel(id)}</span>
                   <span style={{ color: "#e8eaf6" }}>
-                    {formatValue(resources[id].amount)}
+                    {formatResourceValue(id, r.amount)}
                   </span>
                 </div>
-              ),
-            )}
+              ))}
           </PanelSection>
         </aside>
 

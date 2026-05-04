@@ -11,7 +11,7 @@ All game-logic communication uses `window` `CustomEvent`s. DOM events (keyboard,
 | Field | Value |
 |---|---|
 | **Dispatched by** | `daySystem.js` → `advanceDay()` |
-| **Listened by** | `residentSystem.js` (internal), `GameScreen.jsx` (UI day counter) |
+| **Listened by** | `residentSystem.js` (internal), `resourceStructureSystem.js` (internal), `GameScreen.jsx` (UI day counter) |
 | **Timing** | Synchronous — all listeners run before `advanceDay()` returns |
 | **`detail`** | `{ day: number }` — the new day number after increment |
 
@@ -30,6 +30,14 @@ window.addEventListener("day:advance", onDayAdvance);
 // onDayAdvance grows resident counts and fires "residents:updated"
 ```
 
+Listener example (inside `resourceStructureSystem`):
+
+```js
+window.addEventListener("day:advance", onDayAdvance);
+// onDayAdvance ticks per-structure production accumulators,
+// consumes recipe inputs, produces outputs, and unlocks new resource types.
+```
+
 Listener example (GameScreen UI):
 
 ```js
@@ -40,6 +48,7 @@ window.addEventListener("day:advance", onDayTick);
 ---
 
 ### `residents:updated`
+
 
 | Field | Value |
 |---|---|
