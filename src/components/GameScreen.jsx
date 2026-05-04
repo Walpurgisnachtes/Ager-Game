@@ -225,6 +225,8 @@ function resolveTerrainImg(terrainTile, cellKey) {
 // ── Linking configuration ────────────────────────────────────────────────────
 /** Manhattan distance within which structures are considered linked. */
 const LINK_DISTANCE = 5;
+/** Manhattan radius at which each structure reveals the map (war fog). */
+const VISIBILITY_RADIUS = 8;
 
 /**
  * Given a worldGrid and a source tile key, returns the Set of keys of all
@@ -280,6 +282,49 @@ function getIndirectLinkedKeys(worldGrid, sourceKey, linkDistance = LINK_DISTANC
         }
     }
     return result;
+}
+
+/**
+ * Returns the Set of tile keys visible from any placed structure
+ * (Manhattan radius ≤ VISIBILITY_RADIUS).
+ */
+function computeVisibilitySet(wGrid) {
+    const vis = new Set();
+    for (const [srcKey, srcCard] of Object.entries(wGrid)) {
+        if (srcCard.type !== "structure") continue;
+        const [sr, sc] = srcKey.split("-").map(Number);
+        for (let dr = -VISIBILITY_RADIUS; dr <= VISIBILITY_RADIUS; dr++) {
+            const remain = VISIBILITY_RADIUS - Math.abs(dr);
+            for (let dc = -remain; dc <= remain; dc++) {
+                const r = sr + dr, c = sc + dc;
+                if (r >= 0 && r < MAP_H && c >= 0 && c < MAP_W) vis.add(`${r}-${c}`);
+            }
+        }
+    }
+    return vis;
+}
+
+/**
+ * Clamps camera so the viewport center stays within the bounding box
+ * of all structures expanded by VISIBILITY_RADIUS.
+ */
+function clampCam(cam, wGrid, vpW, vpH) {
+    const tileW = TILE_SIZE * cam.zoom;
+    let minRow = Infinity, maxRow = -Infinity, minCol = Infinity, maxCol = -Infinity;
+    for (const [srcKey, srcCard] of Object.entries(wGrid)) {
+        if (srcCard.type !== "structure") continue;
+        const [sr, sc] = srcKey.split("-").map(Number);
+        minRow = Math.min(minRow, sr - VISIBILITY_RADIUS);
+        maxRow = Math.max(maxRow, sr + VISIBILITY_RADIUS);
+        minCol = Math.min(minCol, sc - VISIBILITY_RADIUS);
+        maxCol = Math.max(maxCol, sc + VISIBILITY_RADIUS);
+    }
+    if (minRow === Infinity) return cam; // no structures — unclamped
+    return {
+        ...cam,
+        x: Math.min(vpW / 2 - minCol * tileW, Math.max(vpW / 2 - (maxCol + 1) * tileW, cam.x)),
+        y: Math.min(vpH / 2 - minRow * tileW, Math.max(vpH / 2 - (maxRow + 1) * tileW, cam.y)),
+    };
 }
 
 /**
@@ -376,6 +421,8 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
             }
         }
 
+        const visibilityKeys = computeVisibilitySet(wGrid);
+
         for (let row = rowStart; row < rowEnd; row++) {
             for (let col = colStart; col < colEnd; col++) {
                 const px  = Math.floor(camX + col * tileW);
@@ -383,10 +430,21 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
                 const tw  = Math.ceil(tileW);
                 const key = `${row}-${col}`;
 
-                // Grid outline
+                // Grid outline — always drawn
                 ctx.strokeStyle = "rgba(255,255,255,0.04)";
                 ctx.lineWidth   = 1;
                 ctx.strokeRect(px + 0.5, py + 0.5, tw - 1, tw - 1);
+
+                // War fog — hide tiles outside visibility radius
+                if (!visibilityKeys.has(key)) {
+                    ctx.fillStyle = "rgba(3,6,15,0.92)";
+                    ctx.fillRect(px, py, tw, tw);
+                    if (card && hover && hover.row === row && hover.col === col) {
+                        ctx.fillStyle = "rgba(229,57,53,0.3)"; // always reject in fog
+                        ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
+                    }
+                    continue;
+                }
 
                 // Terrain icon
                 const terrainTile = wMap ? wMap[row * MAP_W + col] : null;
@@ -398,8 +456,8 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
 
                 // Territory highlight — orange tint + outer-edge-only border
                 if (territoryKeys.has(key)) {
-                    ctx.fillStyle = "rgba(255,140,0,0.13)";
-                    ctx.fillRect(px, py, tw, tw);
+                    // ctx.fillStyle = "rgba(255,140,0,0.13)";
+                    // ctx.fillRect(px, py, tw, tw);
                     // Draw only the edges that face non-territory (no inner seams)
                     ctx.strokeStyle = "rgba(255,140,0,0.75)";
                     ctx.lineWidth = 1.5;
@@ -564,7 +622,8 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
             const newZoom = Math.min(3.0, Math.max(0.5, c.zoom * factor));
             const worldX  = (mx - c.x) / c.zoom;
             const worldY  = (my - c.y) / c.zoom;
-            const next = { zoom: newZoom, x: mx - worldX * newZoom, y: my - worldY * newZoom };
+            const { w, h } = vpSizeRef.current;
+            const next = clampCam({ zoom: newZoom, x: mx - worldX * newZoom, y: my - worldY * newZoom }, worldGridRef.current, w, h);
             camRef.current = next;
             schedDraw();
         };
@@ -582,8 +641,9 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
     };
     const onPointerMove = (e) => {
         if (!panRef.current) return;
-        const next = { ...camRef.current, x: panRef.current.camX + (e.clientX - panRef.current.x), y: panRef.current.camY + (e.clientY - panRef.current.y) };
-        camRef.current = next;
+        const raw = { ...camRef.current, x: panRef.current.camX + (e.clientX - panRef.current.x), y: panRef.current.camY + (e.clientY - panRef.current.y) };
+        const { w, h } = vpSizeRef.current;
+        camRef.current = clampCam(raw, worldGridRef.current, w, h);
         schedDraw();
     };
     const onPointerUp = (e) => {
@@ -618,12 +678,12 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         if (e.button !== 1) return;
         e.preventDefault();
         const { w, h } = vpSizeRef.current;
-        const next = {
+        const raw = {
             x: Math.round(w / 2 - (Math.floor(MAP_W / 2) + 0.5) * TILE_SIZE),
             y: Math.round(h / 2 - (Math.floor(MAP_H / 2) + 0.5) * TILE_SIZE),
             zoom: 1.0,
         };
-        camRef.current = next;
+        camRef.current = clampCam(raw, worldGridRef.current, w, h);
         schedDraw();
     };
 
@@ -659,6 +719,10 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         schedDraw();
         const card = draggingRef.current;
         if (!tile || !card || !canDrop(card, "world")) return;
+        // Structure cards can only be placed in unfogged (visible) areas
+        if (card.type?.toLowerCase() === "structure") {
+            if (!computeVisibilitySet(worldGridRef.current).has(`${tile.row}-${tile.col}`)) return;
+        }
         onWorldDrop(`${tile.row}-${tile.col}`)(card);
     };
 
