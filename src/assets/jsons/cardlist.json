@@ -15,7 +15,7 @@
     "id": "1",
     "name": "Night Wheat",
     "rarity": "Common",
-    "type": "Tile",
+    "type": "structure",
     "tags": [
       "plant",
       "weak-fire"

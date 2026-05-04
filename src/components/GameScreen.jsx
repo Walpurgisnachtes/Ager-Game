@@ -222,13 +222,65 @@ function resolveTerrainImg(terrainTile, cellKey) {
     return TERRAIN_IMGS[terrainTile] ?? null;
 }
 
-// Rarity border colours used when drawing placed cards on canvas.
-const RARITY_COLORS = {
-    // common:    "#78909c",
-    // rare:      "#42a5f5",
-    // epic:      "#ab47bc",
-    legendary: "#ffa726",
-};
+// ── Linking configuration ────────────────────────────────────────────────────
+/** Manhattan distance within which structures are considered linked. */
+const LINK_DISTANCE = 5;
+
+/**
+ * Given a worldGrid and a source tile key, returns the Set of keys of all
+ * linked structures (Manhattan dist ≤ LINK_DISTANCE, both sides linkable).
+ * Returns an empty Set if the source card has the "unlinkable" tag.
+ */
+function getLinkedKeys(worldGrid, sourceKey, linkDistance = LINK_DISTANCE) {
+    const result = new Set();
+    const source = worldGrid[sourceKey];
+    if (!source || source.tags?.includes("unlinkable")) return result;
+
+    const [sRow, sCol] = sourceKey.split("-").map(Number);
+    for (const [key, card] of Object.entries(worldGrid)) {
+        if (key === sourceKey) continue;
+        if (card.type !== "structure") continue;
+        if (card.tags?.includes("unlinkable")) continue;
+        const [row, col] = key.split("-").map(Number);
+        if (Math.abs(row - sRow) + Math.abs(col - sCol) <= linkDistance) {
+            result.add(key);
+        }
+    }
+    return result;
+}
+
+/**
+ * BFS: returns the Set of keys of ALL structures reachable from sourceKey via
+ * chains of direct links (each hop ≤ linkDistance).  Respects "unlinkable".
+ */
+function getIndirectLinkedKeys(worldGrid, sourceKey, linkDistance = LINK_DISTANCE) {
+    const result = new Set();
+    const source = worldGrid[sourceKey];
+    if (!source || source.tags?.includes("unlinkable")) return result;
+
+    // Build a list of linkable structure entries once for efficiency
+    const linkable = Object.entries(worldGrid).filter(([, card]) =>
+        card.type === "structure" && !card.tags?.includes("unlinkable")
+    );
+
+    const queue = [sourceKey];
+    const visited = new Set([sourceKey]);
+
+    while (queue.length > 0) {
+        const currentKey = queue.shift();
+        const [cRow, cCol] = currentKey.split("-").map(Number);
+        for (const [key] of linkable) {
+            if (visited.has(key)) continue;
+            const [row, col] = key.split("-").map(Number);
+            if (Math.abs(row - cRow) + Math.abs(col - cCol) <= linkDistance) {
+                visited.add(key);
+                result.add(key);
+                queue.push(key);
+            }
+        }
+    }
+    return result;
+}
 
 /**
  * Canvas-based world viewport.
@@ -246,7 +298,11 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
     const [isPanning, setIsPanning] = useState(false);
     const panRef        = useRef(null);
     const initializedRef = useRef(false);
-    const hoverTileRef  = useRef(null); // { row, col } | null  — highlighted during drag
+    const hoverTileRef    = useRef(null); // { row, col } | null  — highlighted during drag
+    const selectedTileRef = useRef(null); // { row, col } | null  — clicked structure
+    const clickStartRef   = useRef(null); // { x, y } — detect click vs. pan
+    const linkModeRef        = useRef("direct"); // "direct" | "indirect"
+    const territoryVisibleRef = useRef(true);     // toggle with "T"
     const rafRef        = useRef(null); // pending animation-frame id
     const drawCanvasRef = useRef(null); // always points to latest drawCanvas closure
 
@@ -255,7 +311,6 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
     const worldGridRef = useRef(worldGrid);
     useEffect(() => { worldMapRef.current  = worldMap;  schedDraw(); }, [worldMap]);   // eslint-disable-line
     useEffect(() => { worldGridRef.current = worldGrid; schedDraw(); }, [worldGrid]);  // eslint-disable-line
-
     const { dragging } = useDragContext();
     const draggingRef = useRef(dragging);
     useEffect(() => { draggingRef.current = dragging; schedDraw(); }, [dragging]); // eslint-disable-line
@@ -292,6 +347,34 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         const wGrid  = worldGridRef.current;
         const hover  = hoverTileRef.current;
         const card   = draggingRef.current;
+        const sel      = selectedTileRef.current;
+        const linkMode = linkModeRef.current;
+
+        // Pre-compute linked tile set for the selected structure
+        const linkedKeys = sel
+            ? (linkMode === "indirect"
+                ? getIndirectLinkedKeys(wGrid, `${sel.row}-${sel.col}`)
+                : getLinkedKeys(wGrid, `${sel.row}-${sel.col}`))
+            : new Set();
+
+        // Pre-compute territory: union of every structure's Manhattan-LINK_DISTANCE diamond
+        const territoryKeys = new Set();
+        if (territoryVisibleRef.current) {
+            for (const [srcKey, srcCard] of Object.entries(wGrid)) {
+                if (srcCard.type !== "structure") continue;
+                if (srcCard.tags?.includes("unlinkable")) continue;
+                const [sr, sc] = srcKey.split("-").map(Number);
+                for (let dr = -LINK_DISTANCE; dr <= LINK_DISTANCE; dr++) {
+                    const remain = LINK_DISTANCE - Math.abs(dr);
+                    for (let dc = -remain; dc <= remain; dc++) {
+                        const r = sr + dr, c = sc + dc;
+                        if (r >= 0 && r < MAP_H && c >= 0 && c < MAP_W) {
+                            territoryKeys.add(`${r}-${c}`);
+                        }
+                    }
+                }
+            }
+        }
 
         for (let row = rowStart; row < rowEnd; row++) {
             for (let col = colStart; col < colEnd; col++) {
@@ -313,15 +396,53 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
                     ctx.drawImage(terrainImg, px + pad, py + pad, tw - pad * 2, tw - pad * 2);
                 }
 
-                // Placed card — drawn on top of terrain
+                // Territory highlight — orange tint + outer-edge-only border
+                if (territoryKeys.has(key)) {
+                    ctx.fillStyle = "rgba(255,140,0,0.13)";
+                    ctx.fillRect(px, py, tw, tw);
+                    // Draw only the edges that face non-territory (no inner seams)
+                    ctx.strokeStyle = "rgba(255,140,0,0.75)";
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    if (!territoryKeys.has(`${row - 1}-${col}`)) { ctx.moveTo(px, py + 0.75);      ctx.lineTo(px + tw, py + 0.75); }
+                    if (!territoryKeys.has(`${row + 1}-${col}`)) { ctx.moveTo(px, py + tw - 0.75); ctx.lineTo(px + tw, py + tw - 0.75); }
+                    if (!territoryKeys.has(`${row}-${col - 1}`)) { ctx.moveTo(px + 0.75, py);      ctx.lineTo(px + 0.75, py + tw); }
+                    if (!territoryKeys.has(`${row}-${col + 1}`)) { ctx.moveTo(px + tw - 0.75, py); ctx.lineTo(px + tw - 0.75, py + tw); }
+                    ctx.stroke();
+                }
+
+                // Link-range area highlight
+                // – Direct / drag mode: diamond around selected/hovered tile
+                // – Indirect mode: diamond around every reachable structure
+                if (sel && linkMode === "indirect") {
+                    const inRange = (() => {
+                        const dist = Math.abs(row - sel.row) + Math.abs(col - sel.col);
+                        if (dist > 0 && dist <= LINK_DISTANCE) return true;
+                        for (const lk of linkedKeys) {
+                            const [lr, lc] = lk.split("-").map(Number);
+                            const d = Math.abs(row - lr) + Math.abs(col - lc);
+                            if (d > 0 && d <= LINK_DISTANCE) return true;
+                        }
+                        return false;
+                    })();
+                    if (inRange) {
+                        ctx.fillStyle = "rgba(0,229,255,0.10)";
+                        ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
+                    }
+                } else {
+                    const rangeCenter = sel ?? (card?.type?.toLowerCase() === "structure" && hover ? hover : null);
+                    if (rangeCenter) {
+                        const dist = Math.abs(row - rangeCenter.row) + Math.abs(col - rangeCenter.col);
+                        if (dist > 0 && dist <= LINK_DISTANCE) {
+                            ctx.fillStyle = "rgba(0,229,255,0.10)";
+                            ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
+                        }
+                    }
+                }
+
+                // Placed card — drawn on top of terrain (no rarity border for structures)
                 const placedCard = wGrid[key];
                 if (placedCard) {
-                    const rarity = placedCard.rarity?.toLowerCase();
-                    const borderColor = RARITY_COLORS[rarity] ?? "#00000000";
-                    // Rarity border
-                    ctx.strokeStyle = borderColor;
-                    ctx.lineWidth   = Math.max(1.5, tw * 0.04);
-                    ctx.strokeRect(px + 1, py + 1, tw - 2, tw - 2);
                     // Subtle background tint
                     ctx.fillStyle = "rgba(3,6,15,0.55)";
                     ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
@@ -338,6 +459,22 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
                         ctx.textBaseline = "middle";
                         ctx.fillText(placedCard.name, px + tw / 2, py + tw / 2, tw - 4);
                     }
+                }
+
+                // Selected-structure highlight (aqua ring on the clicked tile)
+                if (sel && sel.row === row && sel.col === col) {
+                    ctx.strokeStyle = "rgba(0,229,255,0.9)";
+                    ctx.lineWidth   = Math.max(2, tw * 0.05);
+                    ctx.strokeRect(px + 1, py + 1, tw - 2, tw - 2);
+                }
+
+                // Linked-structure highlight (aqua tint)
+                if (linkedKeys.has(key)) {
+                    ctx.fillStyle = "rgba(0,229,255,0.22)";
+                    ctx.fillRect(px + 1, py + 1, tw - 2, tw - 2);
+                    ctx.strokeStyle = "rgba(0,229,255,0.55)";
+                    ctx.lineWidth   = 1;
+                    ctx.strokeRect(px + 1, py + 1, tw - 2, tw - 2);
                 }
 
                 // Drop-hover highlight (only while dragging a card)
@@ -375,6 +512,29 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         });
         ro.observe(el);
         return () => ro.disconnect();
+    }, [schedDraw]);
+
+    // ── "T" key — toggle territory visibility ─────────────────────────────
+    useEffect(() => {
+        const handler = (e) => {
+            if (e.key !== "t" && e.key !== "T") return;
+            territoryVisibleRef.current = !territoryVisibleRef.current;
+            schedDraw();
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [schedDraw]);
+
+    // ── "L" key — toggle link mode ─────────────────────────────────────────
+    useEffect(() => {
+        const handler = (e) => {
+            if (e.key !== "l" && e.key !== "L") return;
+            if (!selectedTileRef.current) return;
+            linkModeRef.current = linkModeRef.current === "direct" ? "indirect" : "direct";
+            schedDraw();
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
     }, [schedDraw]);
 
     // Trigger canvas repaints when async image loads complete (non-singlefile builds)
@@ -417,6 +577,7 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         setIsPanning(true);
+        clickStartRef.current = { x: e.clientX, y: e.clientY };
         panRef.current = { x: e.clientX, y: e.clientY, camX: camRef.current.x, camY: camRef.current.y };
     };
     const onPointerMove = (e) => {
@@ -425,7 +586,32 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         camRef.current = next;
         schedDraw();
     };
-    const onPointerUp = () => { panRef.current = null; setIsPanning(false); };
+    const onPointerUp = (e) => {
+        // Detect click: pointer barely moved (≤ 4 px) — handle structure selection
+        const cs = clickStartRef.current;
+        if (cs && Math.abs(e.clientX - cs.x) <= 4 && Math.abs(e.clientY - cs.y) <= 4) {
+            const tile = screenToTile(e.clientX, e.clientY);
+            const wGrid = worldGridRef.current;
+            if (tile) {
+                const key  = `${tile.row}-${tile.col}`;
+                const card = wGrid[key];
+                const prev = selectedTileRef.current;
+                // Toggle off if clicking the same tile; clear if clicking empty or non-interactable
+                if (card && card.type === "structure" && !card.tags?.includes("uninteractable")
+                    && !(prev && prev.row === tile.row && prev.col === tile.col)) {
+                    selectedTileRef.current = tile;
+                    linkModeRef.current = "direct"; // reset to direct on new selection
+                } else {
+                    selectedTileRef.current = null;
+                    linkModeRef.current = "direct";
+                }
+                schedDraw();
+            }
+        }
+        clickStartRef.current = null;
+        panRef.current = null;
+        setIsPanning(false);
+    };
 
     // ── Middle-click: re-center on Center of the World ───────────────────────
     const onMouseDown = (e) => {
