@@ -16,7 +16,7 @@
         "amount": 1,
         "socialStatus": "vulgar"
       },
-      "maxResidents": 99999999,
+      "maxResidents": 100,
       "dayPerResidentIncrement": 10
     },
     "description": "Center of the world.",
