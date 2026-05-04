@@ -3,7 +3,7 @@
 //  Derives and evolves resident counts from structures placed on the world grid.
 //
 //  Population model (per structure instance):
-//    residentProvided.type                     — resident type key (e.g. "Zombie")
+//    residentProvided.name                     — resident type key (e.g. "Zombie")
 //    residentProvided.initialResidents         — { amount, socialStatus }
 //                                                Immediately granted on placement.
 //    residentProvided.dayPerResidentIncrement  — every N days, +1 resident (same socialStatus)
@@ -41,7 +41,7 @@ export function buildInitialPopulation(worldGrid) {
   for (const card of Object.values(worldGrid)) {
     const rp = card.residentProvided;
     if (!rp) continue;
-    const typeKey = rp.type.toLowerCase();
+    const typeKey = rp.name.toLowerCase();
     if (!pop[typeKey]) pop[typeKey] = zeroCounts();
     const { amount, socialStatus } = rp.initialResidents;
     const cls = SOCIAL_CLASSES.includes(socialStatus) ? socialStatus : "vulgar";
@@ -112,7 +112,7 @@ export function initResidentSystem(getWorldGrid) {
     for (const [key, counts] of Object.entries(residentCounts)) {
       const rp = wGrid[key]?.residentProvided;
       if (!rp) continue;
-      const typeKey = rp.type.toLowerCase();
+      const typeKey = rp.name.toLowerCase();
       if (!pop[typeKey]) pop[typeKey] = zeroCounts();
       for (const cls of SOCIAL_CLASSES) {
         pop[typeKey][cls] += counts[cls] ?? 0;
@@ -158,11 +158,27 @@ export function initResidentSystem(getWorldGrid) {
   syncWithWorld();
   window.addEventListener("day:advance", onDayAdvance);
 
+  /**
+   * Returns a per-tile snapshot of resident counts.
+   * { [tileKey]: { vulgar: N, noble: N, soldier: N } }
+   * Use this to determine how many residents are available at a specific tile
+   * (e.g. for spatial staffing checks in resourceStructureSystem).
+   */
+  function getResidentCountsPerTile() {
+    const snapshot = {};
+    for (const [key, counts] of Object.entries(residentCounts)) {
+      snapshot[key] = { ...counts };
+    }
+    return snapshot;
+  }
+
   return {
     /** Call after any worldGrid change to pick up newly placed structures. */
     syncWithWorld,
-    /** Returns current population snapshot. */
+    /** Returns current population snapshot aggregated by type. */
     getPopulation,
+    /** Returns per-tile resident counts snapshot { [tileKey]: { vulgar, noble, soldier } }. */
+    getResidentCountsPerTile,
     /** Remove all event listeners; call on component unmount. */
     destroy() {
       window.removeEventListener("day:advance", onDayAdvance);

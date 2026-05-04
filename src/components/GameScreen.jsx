@@ -1007,6 +1007,8 @@ function GameScreenContent({ onMenu, startData }) {
       () => worldGridResRef.current,
       () => resourceSysRef.current,
       () => computeTerritorySet(worldGridResRef.current),
+      () => residentSysRef.current,
+      (tileKey) => [...getLinkedKeys(worldGridResRef.current, tileKey)],
     );
     resourceStructureSysRef.current = rss;
 

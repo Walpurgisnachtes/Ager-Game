@@ -10,7 +10,7 @@
       "not-in-deck"
     ],
     "residentProvided": {
-      "type": "Zombie",
+      "name": "Zombie",
       "initialResidents": {
         "amount": 1,
         "socialStatus": "vulgar"
@@ -59,6 +59,10 @@
       "weak-fire"
     ],
     "daysPerOutput": 1,
+    "residentRequired": {
+      "name": "Zombie",
+      "amount": 1
+    },
     "recipes": [
       {
         "input": [
@@ -88,6 +92,10 @@
       "weak-fire"
     ],
     "daysPerOutput": 1,
+    "residentRequired": {
+      "name": "Zombie",
+      "amount": 2
+    },
     "recipes": [
       {
         "input": [
@@ -118,7 +126,7 @@
       "residential"
     ],
     "residentProvided": {
-      "type": "Zombie",
+      "name": "Zombie",
       "initialResidents":  {
         "amount": 1,
         "socialStatus": "vulgar"
@@ -140,7 +148,7 @@
       "residential"
     ],
     "residentProvided": {
-      "type": "Skeleton",
+      "name": "Skeleton",
       "initialResidents":  {
         "amount": 1,
         "socialStatus": "vulgar"
