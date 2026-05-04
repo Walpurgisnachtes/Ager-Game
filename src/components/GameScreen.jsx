@@ -248,6 +248,118 @@ function PopulationPanel({ population, popView, onSetPopView }) {
   );
 }
 
+// ── Structure detail card ────────────────────────────────────────────────────
+const RARITY_COLOR = {
+  Common:    "#9e9e9e",
+  Uncommon:  "#4caf50",
+  Rare:      "#42a5f5",
+  Epic:      "#ab47bc",
+  Legendary: "#ffa726",
+};
+
+function StructureDetailCard({ card }) {
+  if (!card) return null;
+  const rarityColor = RARITY_COLOR[card.rarity] ?? "#9fa8da";
+  return (
+    <div
+      style={{
+        borderRadius: "0.6rem",
+        border: `1px solid ${rarityColor}55`,
+        background: "rgba(255,255,255,0.03)",
+        padding: "0.75rem",
+      }}
+    >
+      {/* Name + Rarity */}
+      <div style={{ marginBottom: "0.4rem" }}>
+        <span style={{ fontSize: "1rem", fontWeight: 600, color: "#e8eaf6" }}>
+          {card.name}
+        </span>
+        <span
+          style={{
+            marginLeft: "0.5rem",
+            fontSize: "0.72rem",
+            color: rarityColor,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+          }}
+        >
+          {card.rarity}
+        </span>
+      </div>
+
+      {/* Type */}
+      <div style={{ fontSize: "0.8rem", color: "#7986cb", marginBottom: "0.5rem", textTransform: "capitalize" }}>
+        {card.type}
+      </div>
+
+      {/* Tags */}
+      {card.tags?.filter(t => t !== "not-in-deck" && t !== "invincible" && t !== "center_of_the_world").length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", marginBottom: "0.6rem" }}>
+          {card.tags
+            .filter(t => t !== "not-in-deck" && t !== "invincible" && t !== "center_of_the_world")
+            .map(tag => (
+              <span
+                key={tag}
+                style={{
+                  fontSize: "0.68rem",
+                  padding: "0.1rem 0.45rem",
+                  borderRadius: "0.9rem",
+                  background: "rgba(121,134,203,0.15)",
+                  border: "1px solid rgba(121,134,203,0.25)",
+                  color: "#9fa8da",
+                }}
+              >
+                {tag.replace(/-/g, " ")}
+              </span>
+            ))}
+        </div>
+      )}
+
+      {/* Labor requirement */}
+      {card.residentRequired && (
+        <div
+          style={{
+            marginTop: "0.4rem",
+            padding: "0.4rem 0.6rem",
+            borderRadius: "0.4rem",
+            background: "rgba(220,20,60,0.08)",
+            border: "1px solid rgba(220,20,60,0.22)",
+          }}
+        >
+          <span style={{ ...LABEL, marginBottom: "0.2rem", color: "#ef9a9a" }}>Labor</span>
+          <div style={{ fontSize: "0.9rem", color: "#e8eaf6" }}>
+            {card.residentRequired.amount}× {card.residentRequired.name}
+          </div>
+        </div>
+      )}
+
+      {/* Housing capacity */}
+      {card.residentProvided && (
+        <div
+          style={{
+            marginTop: "0.4rem",
+            padding: "0.4rem 0.6rem",
+            borderRadius: "0.4rem",
+            background: "rgba(76,175,80,0.08)",
+            border: "1px solid rgba(76,175,80,0.22)",
+          }}
+        >
+          <span style={{ ...LABEL, marginBottom: "0.2rem", color: "#a5d6a7" }}>Housing</span>
+          <div style={{ fontSize: "0.9rem", color: "#e8eaf6" }}>
+            {card.residentProvided.name}
+            {card.residentProvided.maxResidents < 1e8 && (
+              <span style={{ color: "#9fa8da" }}> (cap {card.residentProvided.maxResidents})</span>
+            )}
+          </div>
+          <div style={{ fontSize: "0.78rem", color: "#9fa8da", marginTop: "0.15rem" }}>
+            +1 every {card.residentProvided.dayPerResidentIncrement} days
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── World Grid ────────────────────────────────────────────────────────────────────────────────
 const TERRAIN_ICONS = Object.fromEntries(
   Object.entries(_terrainIconsGlob).map(([path, mod]) => [
@@ -443,7 +555,7 @@ function clampCam(cam, wGrid, vpW, vpH) {
  * – Scroll wheel → zoom toward cursor (0.5× – 3.0×)
  * – Middle-click → re-center on Center of the World tile
  */
-function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
+function WorldGrid({ worldGrid, onWorldDrop, worldMap, onStructureSelect }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const vpSizeRef = useRef({ w: 0, h: 0 });
@@ -818,9 +930,20 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap }) {
         ) {
           selectedTileRef.current = tile;
           linkModeRef.current = "direct"; // reset to direct on new selection
+          // Auto-center camera on the selected tile.
+          const { w, h } = vpSizeRef.current;
+          const zoom = camRef.current.zoom;
+          const raw = {
+            ...camRef.current,
+            x: Math.round(w / 2 - (tile.col + 0.5) * TILE_SIZE * zoom),
+            y: Math.round(h / 2 - (tile.row + 0.5) * TILE_SIZE * zoom),
+          };
+          camRef.current = clampCam(raw, worldGridRef.current, w, h);
+          onStructureSelect?.(card);
         } else {
           selectedTileRef.current = null;
           linkModeRef.current = "direct";
+          onStructureSelect?.(null);
         }
         schedDraw();
       }
@@ -953,6 +1076,7 @@ function GameScreenContent({ onMenu, startData }) {
   const [population, setPopulation] = useState({});
   const [popView, setPopView] = useState("total"); // "total" | "social"
   const [day, setDay] = useState(0);
+  const [selectedCard, setSelectedCard] = useState(null);
   // Resources — driven by resourceSystem; only unlocked entries are shown.
   const [resources, setResources] = useState({
     coin: { amount: 0, unlocked: true },
@@ -1183,6 +1307,11 @@ function GameScreenContent({ onMenu, startData }) {
             overflowY: "auto",
           }}
         >
+          {selectedCard && (
+            <PanelSection title="Selected Structure">
+              <StructureDetailCard card={selectedCard} />
+            </PanelSection>
+          )}
           <PanelSection title="Resources">
             {Object.entries(resources)
               .filter(([, r]) => r.unlocked)
@@ -1212,6 +1341,7 @@ function GameScreenContent({ onMenu, startData }) {
           worldGrid={worldGrid}
           onWorldDrop={handleWorldDrop}
           worldMap={worldMap}
+          onStructureSelect={setSelectedCard}
         />
 
         {/* Right Panel — Population */}

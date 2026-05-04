@@ -73,8 +73,9 @@ export function createCard({
   description = "",
   art = null, // image shown on the hand card
   worldArt = null, // image shown when placed on the world grid (falls back to art)
+  ...rest // all other dynamic fields (recipes, residentRequired, residentProvided, daysPerOutput, …)
 } = {}) {
-  return { id, name, rarity, type, tags, description, art, worldArt };
+  return { id, name, rarity, type, tags, description, art, worldArt, ...rest };
 }
 
 // ── Card registry ─────────────────────────────────────────────────────────────
