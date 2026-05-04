@@ -24,13 +24,17 @@ export const WORLD_GRID_ACCEPTS = [
 // ── Image resolution ──────────────────────────────────────────────────────────
 // Vite eagerly imports all images from the two asset subdirectories.
 // The resulting map is keyed by "subdir/filename.png" to match JSON path values.
-const _cardArtsGlob   = import.meta.glob("../assets/images/card_arts/*.png",   { eager: true });
-const _worldIconsGlob = import.meta.glob("../assets/images/world_icons/*.png", { eager: true });
+const _cardArtsGlob = import.meta.glob("../assets/images/card_arts/*.png", {
+  eager: true,
+});
+const _worldIconsGlob = import.meta.glob("../assets/images/world_icons/*.png", {
+  eager: true,
+});
 
 const _IMAGE_MAP = Object.fromEntries(
   [...Object.entries(_cardArtsGlob), ...Object.entries(_worldIconsGlob)].map(
-    ([path, mod]) => [path.replace("../assets/images/", ""), mod.default]
-  )
+    ([path, mod]) => [path.replace("../assets/images/", ""), mod.default],
+  ),
 );
 
 /** Resolve a JSON art path string (e.g. "card_arts/foo.png") to a bundled URL. */
@@ -67,7 +71,7 @@ export function createCard({
   type = "Unknown",
   tags = [], // e.g. ["equipment-head"], ["seed", "item"]
   description = "",
-  art = null,      // image shown on the hand card
+  art = null, // image shown on the hand card
   worldArt = null, // image shown when placed on the world grid (falls back to art)
 } = {}) {
   return { id, name, rarity, type, tags, description, art, worldArt };
@@ -82,9 +86,9 @@ export function createCard({
 export const ALL_CARDS = cardListData.map((entry) =>
   createCard({
     ...entry,
-    art:      resolveArt(entry.art),
+    art: resolveArt(entry.art),
     worldArt: resolveArt(entry.worldArt),
-  })
+  }),
 );
 
 /** Look up one or more cards by id. Unknown ids are silently skipped. */

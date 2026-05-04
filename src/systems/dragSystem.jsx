@@ -13,31 +13,32 @@ const DragCtx = createContext(null);
  * Wrap the game root in <DragProvider> to enable dragging everywhere inside.
  */
 export function DragProvider({ children }) {
-    const [dragging, setDragging] = useState(null); // card object | null
+  const [dragging, setDragging] = useState(null); // card object | null
 
-    const startDrag = useCallback((card, e) => {
-        setDragging(card);
-        e.dataTransfer.effectAllowed = "move";
-        // Store card id in transfer data (useful for future server-side or multi-window support)
-        e.dataTransfer.setData("text/plain", card.id);
-    }, []);
+  const startDrag = useCallback((card, e) => {
+    setDragging(card);
+    e.dataTransfer.effectAllowed = "move";
+    // Store card id in transfer data (useful for future server-side or multi-window support)
+    e.dataTransfer.setData("text/plain", card.id);
+  }, []);
 
-    const endDrag = useCallback(() => setDragging(null), []);
+  const endDrag = useCallback(() => setDragging(null), []);
 
-    return (
-        <DragCtx.Provider value={{ dragging, startDrag, endDrag }}>
-            {children}
-        </DragCtx.Provider>
-    );
+  return (
+    <DragCtx.Provider value={{ dragging, startDrag, endDrag }}>
+      {children}
+    </DragCtx.Provider>
+  );
 }
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
 /** Access the raw drag context (dragging card, startDrag, endDrag). */
 export function useDragContext() {
-    const ctx = useContext(DragCtx);
-    if (!ctx) throw new Error("useDragContext must be used inside <DragProvider>");
-    return ctx;
+  const ctx = useContext(DragCtx);
+  if (!ctx)
+    throw new Error("useDragContext must be used inside <DragProvider>");
+  return ctx;
 }
 
 /**
@@ -48,14 +49,14 @@ export function useDragContext() {
  *   return <div {...dragProps}>...</div>;
  */
 export function useDraggable(card) {
-    const { dragging, startDrag, endDrag } = useDragContext();
-    const isDragging = dragging?.id === card.id;
-    return {
-        isDragging,
-        draggable: true,
-        onDragStart: (e) => startDrag(card, e),
-        onDragEnd: endDrag,
-    };
+  const { dragging, startDrag, endDrag } = useDragContext();
+  const isDragging = dragging?.id === card.id;
+  return {
+    isDragging,
+    draggable: true,
+    onDragStart: (e) => startDrag(card, e),
+    onDragEnd: endDrag,
+  };
 }
 
 /**
@@ -72,34 +73,34 @@ export function useDraggable(card) {
  *   dropProps — spread these onto the drop zone element
  */
 export function useDropZone(zoneType, slotKey, canDropFn, onDropCard) {
-    const { dragging } = useDragContext();
-    const [isOver, setIsOver] = useState(false);
+  const { dragging } = useDragContext();
+  const [isOver, setIsOver] = useState(false);
 
-    // Recomputed on every render; safe because canDropFn is pure
-    const accepts = dragging ? canDropFn(dragging, zoneType, slotKey) : false;
+  // Recomputed on every render; safe because canDropFn is pure
+  const accepts = dragging ? canDropFn(dragging, zoneType, slotKey) : false;
 
-    const dropProps = {
-        onDragOver(e) {
-            if (accepts) e.preventDefault(); // allows drop
-        },
-        onDragEnter(e) {
-            if (accepts) {
-                e.preventDefault();
-                setIsOver(true);
-            }
-        },
-        onDragLeave(e) {
-            // Only clear if leaving to an element outside this zone
-            if (!e.currentTarget.contains(e.relatedTarget)) {
-                setIsOver(false);
-            }
-        },
-        onDrop(e) {
-            e.preventDefault();
-            setIsOver(false);
-            if (dragging && accepts) onDropCard(dragging);
-        },
-    };
+  const dropProps = {
+    onDragOver(e) {
+      if (accepts) e.preventDefault(); // allows drop
+    },
+    onDragEnter(e) {
+      if (accepts) {
+        e.preventDefault();
+        setIsOver(true);
+      }
+    },
+    onDragLeave(e) {
+      // Only clear if leaving to an element outside this zone
+      if (!e.currentTarget.contains(e.relatedTarget)) {
+        setIsOver(false);
+      }
+    },
+    onDrop(e) {
+      e.preventDefault();
+      setIsOver(false);
+      if (dragging && accepts) onDropCard(dragging);
+    },
+  };
 
-    return { isOver, accepts, dropProps };
+  return { isOver, accepts, dropProps };
 }

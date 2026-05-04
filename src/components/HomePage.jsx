@@ -25,10 +25,17 @@ export default function HomePage({ onStart }) {
   return (
     <div
       className="min-h-screen flex flex-col overflow-hidden relative"
-      style={{ background: "#03060f", color: "#e8eaf6", fontFamily: "'Inter', sans-serif" }}
+      style={{
+        background: "#03060f",
+        color: "#e8eaf6",
+        fontFamily: "'Inter', sans-serif",
+      }}
     >
       {/* ── Starry Background ── */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+      <div
+        className="absolute inset-0 overflow-hidden pointer-events-none"
+        aria-hidden="true"
+      >
         {STARS.map((star) => (
           <div
             key={star.id}
@@ -51,9 +58,12 @@ export default function HomePage({ onStart }) {
         aria-hidden="true"
         className="absolute pointer-events-none"
         style={{
-          top: "-10rem", left: "-8rem",
-          width: "28rem", height: "28rem",
-          background: "radial-gradient(circle, rgba(63,81,181,0.18) 0%, transparent 70%)",
+          top: "-10rem",
+          left: "-8rem",
+          width: "28rem",
+          height: "28rem",
+          background:
+            "radial-gradient(circle, rgba(63,81,181,0.18) 0%, transparent 70%)",
           borderRadius: "50%",
         }}
       />
@@ -61,9 +71,12 @@ export default function HomePage({ onStart }) {
         aria-hidden="true"
         className="absolute pointer-events-none"
         style={{
-          bottom: "-10rem", right: "-8rem",
-          width: "28rem", height: "28rem",
-          background: "radial-gradient(circle, rgba(0,188,212,0.14) 0%, transparent 70%)",
+          bottom: "-10rem",
+          right: "-8rem",
+          width: "28rem",
+          height: "28rem",
+          background:
+            "radial-gradient(circle, rgba(0,188,212,0.14) 0%, transparent 70%)",
           borderRadius: "50%",
         }}
       />
@@ -71,7 +84,10 @@ export default function HomePage({ onStart }) {
       {/* ── Header ── */}
       <header
         className="relative z-10 flex items-center justify-between px-8 py-5"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(6px)" }}
+        style={{
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          backdropFilter: "blur(6px)",
+        }}
       >
         <span
           className="text-xl font-semibold tracking-wide select-none"
@@ -84,7 +100,13 @@ export default function HomePage({ onStart }) {
           {["Start", "Save", "Load"].map((label) => (
             <button
               key={label}
-              onClick={label === "Start" ? () => onStart(null) : label === "Load" ? handleLoad : undefined}
+              onClick={
+                label === "Start"
+                  ? () => onStart(null)
+                  : label === "Load"
+                    ? handleLoad
+                    : undefined
+              }
               className="text-sm font-medium transition-all duration-200"
               style={{
                 padding: "0.45rem 1.1rem",
@@ -94,8 +116,12 @@ export default function HomePage({ onStart }) {
                 color: "#c5cae9",
                 cursor: "pointer",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.15)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.07)")
+              }
             >
               {label}
             </button>
@@ -112,7 +138,8 @@ export default function HomePage({ onStart }) {
             style={{
               fontSize: "clamp(2.6rem, 8vw, 5.5rem)",
               color: "#e8eaf6",
-              textShadow: "0 0 40px rgba(121,134,203,0.55), 0 0 80px rgba(63,81,181,0.3)",
+              textShadow:
+                "0 0 40px rgba(121,134,203,0.55), 0 0 80px rgba(63,81,181,0.3)",
               marginBottom: "2rem",
             }}
           >
@@ -131,18 +158,23 @@ export default function HomePage({ onStart }) {
               background: "linear-gradient(135deg, #3f51b5 0%, #283593 100%)",
               color: "#e8eaf6",
               cursor: "pointer",
-              boxShadow: "0 0 32px rgba(63,81,181,0.5), 0 4px 16px rgba(0,0,0,0.4)",
+              boxShadow:
+                "0 0 32px rgba(63,81,181,0.5), 0 4px 16px rgba(0,0,0,0.4)",
               letterSpacing: "0.03em",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = "linear-gradient(135deg, #5c6bc0 0%, #3949ab 100%)";
+              e.currentTarget.style.background =
+                "linear-gradient(135deg, #5c6bc0 0%, #3949ab 100%)";
               e.currentTarget.style.transform = "scale(1.05)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = "linear-gradient(135deg, #3f51b5 0%, #283593 100%)";
+              e.currentTarget.style.background =
+                "linear-gradient(135deg, #3f51b5 0%, #283593 100%)";
               e.currentTarget.style.transform = "scale(1)";
             }}
-            onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.97)")}
+            onMouseDown={(e) =>
+              (e.currentTarget.style.transform = "scale(0.97)")
+            }
             onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1.05)")}
           >
             Start
@@ -163,7 +195,11 @@ export default function HomePage({ onStart }) {
           href="https://github.com/Walpurgisnachtes/Ager-Game"
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: "#7986cb", textDecoration: "none", transition: "color 0.2s" }}
+          style={{
+            color: "#7986cb",
+            textDecoration: "none",
+            transition: "color 0.2s",
+          }}
           onMouseEnter={(e) => (e.currentTarget.style.color = "#e8eaf6")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "#7986cb")}
         >
@@ -172,7 +208,13 @@ export default function HomePage({ onStart }) {
       </footer>
 
       {/* ── Keyframe Styles ── */}
-      <input ref={loadRef} type="file" accept=".sav" style={{ display: "none" }} onChange={onFileChange} />
+      <input
+        ref={loadRef}
+        type="file"
+        accept=".sav"
+        style={{ display: "none" }}
+        onChange={onFileChange}
+      />
       <style>{`
         @keyframes twinkle {
           0%, 100% { opacity: var(--op, 0.6); transform: scale(1); }
