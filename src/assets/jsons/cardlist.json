@@ -28,12 +28,14 @@
     "rarity": "Common",
     "type": "structure",
     "tags": [
+      "factory",
       "plant",
       "weak-fire"
     ],
     "daysPerOutput": 4,
     "residentRequired": {
       "name": "Zombie",
+      "type": "vulgar",
       "amount": 1
     },
     "recipes": [
@@ -57,11 +59,13 @@
     "rarity": "Common",
     "type": "structure",
     "tags": [
+      "factory",
       "weak-fire"
     ],
     "daysPerOutput": 1,
     "residentRequired": {
       "name": "Zombie",
+      "type": "vulgar",
       "amount": 1
     },
     "recipes": [
@@ -90,11 +94,13 @@
     "rarity": "Rare",
     "type": "structure",
     "tags": [
+      "factory",
       "weak-fire"
     ],
     "daysPerOutput": 1,
     "residentRequired": {
       "name": "Zombie",
+      "type": "vulgar",
       "amount": 2
     },
     "recipes": [

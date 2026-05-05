@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import _ from "lodash";
 import {
   generateMap,
   toString as mapToString,
@@ -28,6 +29,10 @@ import { initResidentSystem } from "../systems/game_logic/residentSystem";
 import { initDaySystem } from "../systems/game_logic/daySystem";
 import { initResourceSystem } from "../systems/game_logic/resourceSystem";
 import { initResourceStructureSystem } from "../systems/game_logic/resourceStructureSystem";
+import {
+  systemErrorFlagDictionary,
+  hasSystemError,
+} from "../systems/systemErrorIOSystem";
 import HandCards from "./HandCards";
 import "../assets/styles/cards.css";
 
@@ -46,7 +51,7 @@ const PANEL = {
 
 const LABEL = {
   color: "#7986cb",
-  fontSize: "0.68rem",
+  fontSize: "0.88rem",
   textTransform: "uppercase",
   letterSpacing: "0.08em",
   marginBottom: "0.3rem",
@@ -250,22 +255,25 @@ function PopulationPanel({ population, popView, onSetPopView }) {
 
 // ── Structure detail card ────────────────────────────────────────────────────
 const RARITY_COLOR = {
-  Common:    "#9e9e9e",
-  Uncommon:  "#4caf50",
-  Rare:      "#42a5f5",
-  Epic:      "#ab47bc",
+  Common: "#9e9e9e",
+  Uncommon: "#4caf50",
+  Rare: "#42a5f5",
+  Epic: "#ab47bc",
   Legendary: "#ffa726",
 };
 
 function StructureDetailCard({ card }) {
   if (!card) return null;
   const rarityColor = RARITY_COLOR[card.rarity] ?? "#9fa8da";
+  const resourceStructureSystemErrorFlags =
+    systemErrorFlagDictionary.resourceStructure;
+
   return (
     <div
       style={{
         borderRadius: "0.6rem",
         border: `1px solid ${rarityColor}55`,
-        background: "rgba(255,255,255,0.03)",
+        background: "rgb(0, 3, 25)",
         padding: "0.75rem",
       }}
     >
@@ -288,16 +296,40 @@ function StructureDetailCard({ card }) {
       </div>
 
       {/* Type */}
-      <div style={{ fontSize: "0.8rem", color: "#7986cb", marginBottom: "0.5rem", textTransform: "capitalize" }}>
+      <div
+        style={{
+          fontSize: "0.8rem",
+          color: "#7986cb",
+          marginBottom: "0.5rem",
+          textTransform: "capitalize",
+        }}
+      >
         {card.type}
       </div>
 
       {/* Tags */}
-      {card.tags?.filter(t => t !== "not-in-deck" && t !== "invincible" && t !== "center_of_the_world").length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", marginBottom: "0.6rem" }}>
+      {card.tags?.filter(
+        (t) =>
+          t !== "not-in-deck" &&
+          t !== "invincible" &&
+          t !== "center_of_the_world",
+      ).length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.25rem",
+            marginBottom: "0.6rem",
+          }}
+        >
           {card.tags
-            .filter(t => t !== "not-in-deck" && t !== "invincible" && t !== "center_of_the_world")
-            .map(tag => (
+            .filter(
+              (t) =>
+                t !== "not-in-deck" &&
+                t !== "invincible" &&
+                t !== "center_of_the_world",
+            )
+            .map((tag) => (
               <span
                 key={tag}
                 style={{
@@ -326,10 +358,30 @@ function StructureDetailCard({ card }) {
             border: "1px solid rgba(220,20,60,0.22)",
           }}
         >
-          <span style={{ ...LABEL, marginBottom: "0.2rem", color: "#ef9a9a" }}>Labor</span>
+          <span style={{ ...LABEL, marginBottom: "0.2rem", color: "#ef9a9a" }}>
+            Labor
+          </span>
           <div style={{ fontSize: "0.9rem", color: "#e8eaf6" }}>
             {card.residentRequired.amount}× {card.residentRequired.name}
           </div>
+          {hasSystemError(
+            card.systemErrors?.resourceStructure,
+            resourceStructureSystemErrorFlags.LABOR_SHORTAGE,
+          ) && (
+            <div
+              style={{
+                fontSize: "0.9rem",
+                color: "rgb(249, 0, 0)",
+                padding: "0.3rem 0.6rem",
+                borderRadius: "0.4rem",
+                background: "rgba(156,39,176,0.08)",
+                border: "1px solid rgba(156,39,176,0.22)",
+                textAlign: "center",
+              }}
+            >
+              LABOR SHORTAGE
+            </div>
+          )}
         </div>
       )}
 
@@ -344,16 +396,113 @@ function StructureDetailCard({ card }) {
             border: "1px solid rgba(76,175,80,0.22)",
           }}
         >
-          <span style={{ ...LABEL, marginBottom: "0.2rem", color: "#a5d6a7" }}>Housing</span>
+          <span style={{ ...LABEL, marginBottom: "0.2rem", color: "#a5d6a7" }}>
+            Housing
+          </span>
           <div style={{ fontSize: "0.9rem", color: "#e8eaf6" }}>
             {card.residentProvided.name}
             {card.residentProvided.maxResidents < 1e8 && (
-              <span style={{ color: "#9fa8da" }}> (cap {card.residentProvided.maxResidents})</span>
+              <span style={{ color: "#9fa8da" }}>
+                {" "}
+                (cap {card.residentProvided.maxResidents})
+              </span>
             )}
           </div>
-          <div style={{ fontSize: "0.78rem", color: "#9fa8da", marginTop: "0.15rem" }}>
+          <div
+            style={{
+              fontSize: "0.78rem",
+              color: "#9fa8da",
+              marginTop: "0.15rem",
+            }}
+          >
             +1 every {card.residentProvided.dayPerResidentIncrement} days
           </div>
+        </div>
+      )}
+
+      {/* Production recipes */}
+      {card.recipes?.length > 0 && (
+        <div
+          style={{
+            marginTop: "0.4rem",
+            padding: "0.4rem 0.6rem",
+            borderRadius: "0.4rem",
+            background: "rgba(255,183,77,0.07)",
+            border: "1px solid rgba(255,183,77,0.22)",
+          }}
+        >
+          <span style={{ ...LABEL, marginBottom: "0.35rem", color: "#ffe082" }}>
+            Production
+          </span>
+          {(() => {
+            const recipe = card.recipes[card.selectedRecipeIndex];
+            const inputParts = recipe.input?.length
+              ? recipe.input.map((r) => `${r.amount}× ${r.name}`).join(" + ")
+              : "";
+            const outputParts = recipe.output?.length
+              ? recipe.output.map((r) => `${r.amount}× ${r.name}`).join(" + ")
+              : "nothing";
+            return (
+              <>
+                <div
+                  style={{
+                    width: "100%",
+                    height: "1px",
+                    background: "rgba(255, 255, 255, 0.15)", // 微亮的線條顏色
+                    margin: "0.5rem 0",
+                    border: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.3rem",
+                    fontSize: "0.8rem",
+                    color: "#e8eaf6",
+                    borderTop: "none",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ color: "#fff9c4" }}>
+                    {card.daysPerOutput != null && (
+                      <>
+                        [every {card.daysPerOutput} day
+                        {card.daysPerOutput !== 1 ? "s" : ""}]
+                      </>
+                    )}
+                  </span>
+                  <span style={{ color: "#bdbdbd" }}>
+                    {_.isEmpty(inputParts) ? "Natural Resource" : inputParts}
+                  </span>
+                  <span
+                    style={{ color: "#ffe082", fontWeight: 600, flexShrink: 0 }}
+                  >
+                    →
+                  </span>
+                  <span style={{ color: "#fff9c4" }}>{outputParts}</span>
+                  {hasSystemError(
+                    card.systemErrors?.resourceStructure,
+                    resourceStructureSystemErrorFlags.RESOURCE_SHORTAGE,
+                  ) && (
+                    <div
+                      style={{
+                        fontSize: "0.9rem",
+                        color: "rgb(249, 0, 0)",
+                        padding: "0.3rem 0.6rem",
+                        borderRadius: "0.4rem",
+                        background: "rgba(156,39,176,0.08)",
+                        border: "1px solid rgba(156,39,176,0.22)",
+                        textAlign: "center",
+                      }}
+                    >
+                      RESOURCE SHORTAGE
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -570,6 +719,8 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap, onStructureSelect }) {
   const territoryVisibleRef = useRef(true); // toggle with "T"
   const rafRef = useRef(null); // pending animation-frame id
   const drawCanvasRef = useRef(null); // always points to latest drawCanvas closure
+  const [floatState, setFloatState] = useState(null); // { card, left, top } — floating detail card
+  const floatDivRef = useRef(null);
 
   // Refs for latest props so drawCanvas never reads stale closure values
   const worldMapRef = useRef(worldMap);
@@ -785,6 +936,17 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap, onStructureSelect }) {
         }
       }
     }
+
+    // Imperatively reposition the floating detail card to track camera pan/zoom
+    if (floatDivRef.current && selectedTileRef.current) {
+      const { row: selRow, col: selCol } = selectedTileRef.current;
+      const CARD_W = 220;
+      const rawLeft = selCol * tileW + camX - CARD_W - 8;
+      const rawTop = selRow * tileW + camY;
+      const { w: vpW, h: vpH } = vpSizeRef.current;
+      floatDivRef.current.style.left = `${Math.max(4, Math.min(vpW - CARD_W - 4, rawLeft))}px`;
+      floatDivRef.current.style.top = `${Math.max(4, Math.min(vpH - 32, rawTop))}px`;
+    }
   };
 
   // ── Resize observer — also sets canvas backing-store size ────────────────
@@ -939,10 +1101,22 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap, onStructureSelect }) {
             y: Math.round(h / 2 - (tile.row + 0.5) * TILE_SIZE * zoom),
           };
           camRef.current = clampCam(raw, worldGridRef.current, w, h);
+          // Compute initial float card position (camera already updated above)
+          const { x: fc_camX, y: fc_camY, zoom: fc_zoom } = camRef.current;
+          const CARD_W = 220;
+          const tileW_fc = TILE_SIZE * fc_zoom;
+          const rawLeft = tile.col * tileW_fc + fc_camX - CARD_W - 8;
+          const rawTop = tile.row * tileW_fc + fc_camY;
+          setFloatState({
+            card,
+            left: Math.max(4, Math.min(w - CARD_W - 4, rawLeft)),
+            top: Math.max(4, Math.min(h - 32, rawTop)),
+          });
           onStructureSelect?.(card);
         } else {
           selectedTileRef.current = null;
           linkModeRef.current = "direct";
+          setFloatState(null);
           onStructureSelect?.(null);
         }
         schedDraw();
@@ -1054,6 +1228,21 @@ function WorldGrid({ worldGrid, onWorldDrop, worldMap, onStructureSelect }) {
       >
         World
       </span>
+      {floatState && (
+        <div
+          ref={floatDivRef}
+          style={{
+            position: "absolute",
+            left: floatState.left,
+            top: floatState.top,
+            width: 220,
+            zIndex: 20,
+            pointerEvents: "none",
+          }}
+        >
+          <StructureDetailCard card={floatState.card} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1138,7 +1327,9 @@ function GameScreenContent({ onMenu, startData }) {
 
     // Advance from day 0 to day 1 — fires "day:advance" synchronously,
     // which all systems handle before this line returns.
-    daySys.advanceDay();
+    if (daySysRef.current.getDay() === 0) {
+      daySys.advanceDay();
+    }
 
     return () => {
       sys.destroy();
@@ -1307,11 +1498,8 @@ function GameScreenContent({ onMenu, startData }) {
             overflowY: "auto",
           }}
         >
-          {selectedCard && (
-            <PanelSection title="Selected Structure">
-              <StructureDetailCard card={selectedCard} />
-            </PanelSection>
-          )}
+          <PanelSection title={`Night ${day}`}>
+          </PanelSection>
           <PanelSection title="Resources">
             {Object.entries(resources)
               .filter(([, r]) => r.unlocked)

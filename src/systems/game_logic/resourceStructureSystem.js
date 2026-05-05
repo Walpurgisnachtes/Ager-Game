@@ -18,6 +18,8 @@
 //    Listens:   "day:advance"   (dispatched by daySystem)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import _ from "lodash";
+
 /**
  * Normalize a recipe resource name to a resource-system ID.
  * "Night Wheat Flour" → "night_wheat_flour"
@@ -28,6 +30,12 @@
 export function normalizeResourceId(name) {
   return name.toLowerCase().replace(/\s+/g, "_");
 }
+
+export const ProductionErrorFlags = {
+  OUT_OF_TERRITORY: 1,
+  LABOR_SHORTAGE: 2,
+  RESOURCE_SHORTAGE: 4,
+};
 
 /**
  * Creates a resource structure system instance.
@@ -96,10 +104,26 @@ export function initResourceStructureSystem(
     }
 
     for (const [key, card] of Object.entries(wGrid)) {
-      if (!card.recipes?.length || !(key in dayAccumulators)) continue;
+      if (!_.includes(card.tags, "factory")) {
+        continue;
+      }
+
+      if (!card.recipes?.length || !(key in dayAccumulators)) {
+        // Broken data or sync issue — skip this tile until the next day when syncWithWorld runs again.
+        console.error(
+          `ResourceStructureSystem: tile ${key} has no recipes or accumulator`,
+        );
+        continue;
+      }
 
       // Structures outside territory are inert — neither accumulate nor produce.
-      if (territory && !territory.has(key)) continue;
+      if (territory && !territory.has(key)) {
+        card.setSystemErrorFlag?.(
+          "resourceStructure",
+          ProductionErrorFlags.OUT_OF_TERRITORY,
+        );
+        continue;
+      }
 
       // Spatial staffing check:
       // Structures without "independent" or "residential" tags must be
@@ -109,10 +133,19 @@ export function initResourceStructureSystem(
         card.tags?.includes("independent") ||
         card.tags?.includes("residential");
       if (!isExempt && card.residentRequired) {
-        const { name: requiredType, amount: requiredAmount } =
-          card.residentRequired;
+        const {
+          name: requiredType,
+          type: requiredSocialStatus,
+          amount: requiredAmount,
+        } = card.residentRequired;
 
-        if (!getConnectedTiles || !perTileCounts) continue; // no linkage system
+        if (!getConnectedTiles || !perTileCounts) {
+          card.setSystemErrorFlag?.(
+            "resourceStructure",
+            ProductionErrorFlags.LABOR_SHORTAGE,
+          );
+          continue;
+        } // no linkage system
 
         // Find connected residential tiles that provide the required resident type.
         const connectedKeys = getConnectedTiles(key);
@@ -120,7 +153,10 @@ export function initResourceStructureSystem(
           const hCard = wGrid[hKey];
           return (
             hCard?.tags?.includes("residential") &&
-            hCard?.residentProvided?.name === requiredType
+            hCard?.residentProvided?.name === requiredType &&
+            (requiredSocialStatus
+              ? hCard.residentProvided.socialStatus === requiredSocialStatus
+              : true)
           );
         });
 
@@ -129,11 +165,17 @@ export function initResourceStructureSystem(
         for (const hKey of eligibleHouses) {
           const c = perTileCounts[hKey];
           if (!c) continue;
-          const hTotal = (c.vulgar ?? 0) + (c.noble ?? 0) + (c.soldier ?? 0);
+          const hTotal = c[requiredSocialStatus ?? "vulgar"] ?? 0;
           totalAvailable += Math.max(0, hTotal - (dailyOccupancy[hKey] ?? 0));
         }
 
-        if (totalAvailable < requiredAmount) continue; // understaffed — skip without ticking
+        if (totalAvailable < requiredAmount) {
+          card.setSystemErrorFlag?.(
+            "resourceStructure",
+            ProductionErrorFlags.LABOR_SHORTAGE,
+          );
+          continue;
+        }
 
         // Greedy allocation: claim from eligible houses in order.
         let remaining = requiredAmount;
@@ -141,7 +183,7 @@ export function initResourceStructureSystem(
           if (remaining <= 0) break;
           const c = perTileCounts[hKey];
           if (!c) continue;
-          const hTotal = (c.vulgar ?? 0) + (c.noble ?? 0) + (c.soldier ?? 0);
+          const hTotal = c[requiredSocialStatus ?? "vulgar"] ?? 0;
           const available = Math.max(0, hTotal - (dailyOccupancy[hKey] ?? 0));
           const claim = Math.min(available, remaining);
           dailyOccupancy[hKey] = (dailyOccupancy[hKey] ?? 0) + claim;
@@ -149,28 +191,28 @@ export function initResourceStructureSystem(
         }
       }
 
-      // MVP: always use the first recipe.
-      const recipe = card.recipes[0];
+      const recipe = card.recipes[card.selectedRecipeIndex];
       const daysNeeded = card.daysPerOutput ?? 1;
 
-      dayAccumulators[key] += 1;
-
-      // Cycle not yet complete — keep accumulating.
-      if (dayAccumulators[key] < daysNeeded) continue;
-
       // Cycle complete — check whether all inputs can be satisfied.
-      const canProduce = recipe.input.every(({ name, amount }) => {
+      const hasSufficientResources = recipe.input.every(({ name, amount }) => {
         const id = normalizeResourceId(name);
         const res = resSys.getResource(id);
         return res !== null && res.amount >= amount;
       });
 
-      if (!canProduce) {
-        // Hold the accumulator at its ceiling so production fires on the
-        // very next day that inputs become available.
-        dayAccumulators[key] = daysNeeded;
+      if (!hasSufficientResources) {
+        card.setSystemErrorFlag?.(
+          "resourceStructure",
+          ProductionErrorFlags.RESOURCE_SHORTAGE,
+        );
         continue;
       }
+
+      dayAccumulators[key] = Math.min(dayAccumulators[key] + 1, daysNeeded);
+
+      // Cycle not yet complete — keep accumulating.
+      if (dayAccumulators[key] < daysNeeded) continue;
 
       // Reset cycle.
       dayAccumulators[key] = 0;

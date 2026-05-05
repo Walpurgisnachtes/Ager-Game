@@ -84,13 +84,32 @@ export function createCard({
  * All cards loaded from cardlist.json, with art paths resolved to bundled URLs.
  * Use this as the single source of truth for card data.
  */
-export const ALL_CARDS = cardListData.map((entry) =>
-  createCard({
+export const ALL_CARDS = cardListData.map((entry) => {
+  const card = createCard({
     ...entry,
     art: resolveArt(entry.art),
     worldArt: resolveArt(entry.worldArt),
-  }),
-);
+
+    selectedRecipeIndex: 0, // for structures with multiple recipes; index of the active one
+
+    systemErrors: Object.create(null),
+  });
+
+  card.setSystemErrorFlag = (systemType, errorFlag) => {
+    if (!systemType) return;
+
+    card.systemErrors[systemType] ||= 0;
+    card.systemErrors[systemType] |= errorFlag;
+  };
+
+  card.clearSystemErrorFlag = (systemType) => {
+    if (!systemType) return;
+
+    card.systemErrors[systemType] = 0;
+  };
+
+  return card;
+});
 
 /** Look up one or more cards by id. Unknown ids are silently skipped. */
 export function getCardsById(...ids) {
